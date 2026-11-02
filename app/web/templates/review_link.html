@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block title %}Fix match &middot; Plex AniList Bridge{% endblock %}
+{% block content %}
+
+<p><a href="/review">&larr; back to review</a></p>
+
+<div class="page-head">
+  <h1>{{ group.title }}
+    <span class="muted">{% if group.media_kind == 'movie' %}movie{% else %}season {{ group.season }}{% endif %}</span>
+  </h1>
+  <p class="muted">
+    <span class="tag tag-{{ group.status }}">{{ group.status }}</span>
+    {% if group.episodes and group.media_kind != 'movie' %}Waiting: episode{{ 's' if group.episodes|length > 1 }} {{ group.episode_text }}.{% endif %}
+    {{ group.summary }}
+    <a href="/activity/{{ group.latest_id }}">Full trace</a>
+  </p>
+</div>
+
+<section class="panel" id="pick">
+  <h2><span class="step">1</span> Pick the AniList title</h2>
+
+  {% if group.candidates %}
+  <h3>Suggested</h3>
+  <ul class="pick-list">
+    {% for c in group.candidates %}
+    <li class="{{ 'chosen' if chosen and chosen.anilist_id == c.anilist_id }}">
+      <span>
+        <strong>{{ c.title or ('AniList ' ~ c.anilist_id) }}</strong>
+        <span class="muted small">AniList {{ c.anilist_id }}{% if c.total_episodes %} &middot; {{ c.total_episodes }} eps{% endif %} &middot; {{ c.layer }}{% if c.note %} &middot; {{ c.note }}{% endif %}</span>
+      </span>
+      <a class="button secondary" href="/review/{{ group.latest_id }}?anilist={{ c.anilist_id }}#range">Use</a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  <form method="get" action="/review/{{ group.latest_id }}" class="search-row">
+    <input type="search" name="q" value="{{ query }}" placeholder="Search AniList" aria-label="Search AniList">
+    <button class="secondary">Search</button>
+  </form>
+  {% if search_error %}<p class="bad-text small">{{ search_error }}</p>{% endif %}
+
+  {% if results %}
+  <ul class="pick-list">
+    {% for m in results %}
+    {% set names = m.title or {} %}
+    <li class="{{ 'chosen' if chosen and chosen.anilist_id == m.id }}">
+      <span>
+        <strong>{{ names.english or names.romaji or ('AniList ' ~ m.id) }}</strong>
+        {% if names.english and names.romaji and names.english != names.romaji %}<span class="muted small">{{ names.romaji }}</span>{% endif %}
+        <span class="muted small">
+          {{ m.format or '' }}{% if m.seasonYear %} &middot; {{ m.seasonYear }}{% endif %}{% if m.episodes %} &middot; {{ m.episodes }} eps{% endif %}
+          {% if m.mediaListEntry %} &middot; on your list ({{ m.mediaListEntry.status|lower }}, {{ m.mediaListEntry.progress }}){% endif %}
+        </span>
+      </span>
+      <a class="button secondary" href="/review/{{ group.latest_id }}?anilist={{ m.id }}#range">Use</a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% elif query and not search_error %}
+  <p class="muted small">AniList found nothing for &ldquo;{{ query }}&rdquo;.</p>
+  {% endif %}
+
+  <form method="get" action="/review/{{ group.latest_id }}" class="search-row">
+    <input name="anilist" value="{{ chosen.anilist_id if chosen else '' }}" placeholder="AniList id or anilist.co link" aria-label="AniList id or link">
+    <button class="secondary">Use</button>
+  </form>
+  {% if form_error and not spec %}<p class="bad-text small">{{ form_error }}</p>{% endif %}
+</section>
+
+{% if chosen %}
+<section class="panel" id="range">
+  <h2><span class="step">2</span> {% if group.media_kind == 'movie' %}Confirm{% else %}Episode range{% endif %}</h2>
+  <p>
+    <a href="https://anilist.co/anime/{{ chosen.anilist_id }}" target="_blank" rel="noreferrer"><strong>{{ chosen.title }}</strong></a>
+    <span class="muted">AniList {{ chosen.anilist_id }}{% if chosen.format %} &middot; {{ chosen.format }}{% endif %}{% if chosen.episodes %} &middot; {{ chosen.episodes }} episodes{% else %} &middot; episode count unknown{% endif %}</span>
+  </p>
+
+  <form method="post" action="/review/{{ group.latest_id }}/link" id="range-form"
+        data-total="{{ chosen.episodes or '' }}" data-season-end="{{ season_end or '' }}"
+        data-watched="{{ group.episodes|join(',') }}">
+    <input type="hidden" name="anilist" value="{{ chosen.anilist_id }}">
+
+    {% if group.media_kind == 'movie' %}
+      <p>Every play of this movie will be recorded against this AniList title.</p>
+    {% else %}
+    <p class="range-sentence">
+      Plex season {{ group.season }} episodes
+      <input type="number" name="ep_from" min="1" value="{{ spec.ep_from }}" required aria-label="First Plex episode">
+      to
+      <input type="number" name="ep_to" min="1" value="{{ spec.ep_to if spec.ep_to is not none else '' }}" placeholder="end" aria-label="Last Plex episode (blank for the end of the season)">
+      are AniList episodes starting at
+      <input type="number" name="start" min="1" value="{{ spec.start }}" required aria-label="AniList episode the range starts at">
+    </p>
+    {% if form_error %}<p class="bad-text small">{{ form_error }}</p>{% endif %}
+
+    <div class="ep-strip" id="ep-strip" aria-live="polite">
+      {% for r in rows %}
+      <span class="ep {{ 'ep-watched' if r.watched }} {{ 'ep-bad' if r.past_end or r.invalid }}"
+            title="Plex E{{ r.plex }} &rarr; AniList episode {{ r.entry }}{% if r.past_end %} (past the end){% endif %}">
+        <span class="ep-plex">E{{ r.plex }}</span><span class="ep-entry">{{ r.entry }}</span>
+      </span>
+      {% endfor %}
+    </div>
+    <p class="muted small" id="ep-legend">
+      Top: Plex episode. Bottom: AniList episode. <span class="ep-key ep-watched"></span> waiting for review
+      <span class="ep-key ep-bad"></span> past the end of this title
+      {% if not season_end and not spec.ep_to %}&middot; Plex&rsquo;s season length is not known yet, so the preview stops at the last watched episode.{% endif %}
+    </p>
+    {% set uncovered = group.episodes|reject('ge', spec.ep_from)|list + (group.episodes|select('gt', spec.ep_to)|list if spec.ep_to else []) %}
+    <p class="small" id="ep-uncovered" {% if not uncovered %}hidden{% endif %}>
+      Not in this range: <span id="ep-uncovered-list">{% for e in uncovered %}E{{ e }}{{ ', ' if not loop.last }}{% endfor %}</span>
+      &mdash; {{ 'it stays' if uncovered|length == 1 else 'they stay' }} in the queue for another correction.
+    </p>
+    <p class="bad-text small" id="ep-warning" {% if not (rows|selectattr('past_end')|list or rows|selectattr('invalid')|list) %}hidden{% endif %}>
+      Some episodes land outside this AniList title. They will be held again; narrow the range, or add a second correction for the next part.
+    </p>
+
+    <fieldset class="scope">
+      <legend>Applies to</legend>
+      <label class="check"><input type="radio" name="scope" value="plex_guid" {% if scope != 'tvdb' %}checked{% endif %}> This Plex show only</label>
+      {% if group.tvdb_id %}
+      <label class="check"><input type="radio" name="scope" value="tvdb" {% if scope == 'tvdb' %}checked{% endif %}> Every Plex show with TVDB id {{ group.tvdb_id }}</label>
+      {% endif %}
+    </fieldset>
+    {% endif %}
+
+    <div class="button-row">
+      <button>Save and re-run</button>
+      {% if group.media_kind != 'movie' %}
+      <button class="secondary" formmethod="get" formaction="/review/{{ group.latest_id }}#range" formnovalidate>Update preview</button>
+      {% endif %}
+    </div>
+    <p class="muted small">Re-running sends the waiting episodes through the normal sync, so dry run and every safety rule still apply.</p>
+  </form>
+</section>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Live preview of the range. The server renders the same thing, and the
+  // "Update preview" button works without this script.
+  (function () {
+    var form = document.getElementById('range-form');
+    var strip = document.getElementById('ep-strip');
+    if (!form || !strip) return;
+    var total = parseInt(form.dataset.total, 10) || null;
+    var seasonEnd = parseInt(form.dataset.seasonEnd, 10) || null;
+    var watched = (form.dataset.watched || '').split(',').filter(Boolean).map(Number);
+    var warning = document.getElementById('ep-warning');
+    var uncovered = document.getElementById('ep-uncovered');
+    var uncoveredList = document.getElementById('ep-uncovered-list');
+
+    function value(name) { return parseInt(form.elements[name].value, 10); }
+
+    function render() {
+      var from = value('ep_from'), to = value('ep_to'), start = value('start');
+      if (!(from >= 1) || !(start >= 1)) return;
+      var end = to || seasonEnd || Math.max.apply(null, [from].concat(watched));
+      end = Math.min(end, from + 59);
+      var offset = from - start, bad = false;
+      strip.textContent = '';
+      for (var plex = from; plex <= end; plex++) {
+        var entry = plex - offset;
+        var outside = entry < 1 || (total && entry > total);
+        bad = bad || outside;
+        var cell = document.createElement('span');
+        cell.className = 'ep' + (watched.indexOf(plex) >= 0 ? ' ep-watched' : '') + (outside ? ' ep-bad' : '');
+        cell.title = 'Plex E' + plex + ' → AniList episode ' + entry + (outside ? ' (outside this title)' : '');
+        var top = document.createElement('span'); top.className = 'ep-plex'; top.textContent = 'E' + plex;
+        var bottom = document.createElement('span'); bottom.className = 'ep-entry'; bottom.textContent = entry;
+        cell.appendChild(top); cell.appendChild(bottom);
+        strip.appendChild(cell);
+      }
+      warning.hidden = !bad;
+      var outside = watched.filter(function (e) { return e < from || (to && e > to); });
+      uncovered.hidden = outside.length === 0;
+      uncoveredList.textContent = outside.map(function (e) { return 'E' + e; }).join(', ');
+    }
+    ['ep_from', 'ep_to', 'start'].forEach(function (name) {
+      form.elements[name].addEventListener('input', render);
+    });
+  })();
+</script>
+{% endblock %}

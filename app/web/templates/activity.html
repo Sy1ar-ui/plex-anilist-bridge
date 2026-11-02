@@ -39,6 +39,11 @@
   </form>
   {% endif %}
 </div>
+{% elif status in ('held', 'unmatched') and pending_review %}
+<div class="callout">
+  <p>Held and unmatched events are grouped by show on the review page, where each can be linked to an AniList title.</p>
+  <a href="/review">Review them &rarr;</a>
+</div>
 {% elif status == 'awaiting_rating' and to_rate %}
 <div class="callout">
   <p>These finished a series. Each is held one episode short until you rate it.</p>

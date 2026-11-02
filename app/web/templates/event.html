@@ -30,6 +30,14 @@
 </div>
 {% endif %}
 
+{% if reviewable %}
+<div class="callout">
+  <p>This could not be matched confidently, so nothing was written. Link it to the right AniList
+     title once and every episode of this season follows the correction.</p>
+  <a class="button" href="/review/{{ event.id }}">Fix match</a>
+</div>
+{% endif %}
+
 {% if retryable %}
 <div class="callout">
   <p>

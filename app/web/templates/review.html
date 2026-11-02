@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Review &middot; Plex AniList Bridge{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <h1>Review</h1>
+  <p class="muted">Items the bridge could not match confidently. Link one to an AniList title
+    and every episode from then on follows that correction.</p>
+</div>
+
+{% if groups %}
+<section class="panel flush">
+  <ul class="item-list">
+    {% for g in groups %}
+    <li class="item">
+      <div class="item-what">
+        <span>
+          <strong>{{ g.title }}</strong>
+          <span class="muted">{% if g.media_kind == 'movie' %}movie{% else %}season {{ g.season if g.season is not none else '?' }}{% if g.episodes %} &middot; episode{{ 's' if g.episodes|length > 1 }} {{ g.episode_text }}{% endif %}{% endif %}</span>
+          <span class="tag tag-{{ g.status }}">{{ g.status }}</span>
+        </span>
+        <span class="small clamp" title="{{ g.summary }}">{{ g.summary }}</span>
+        {% if g.covered_ids %}<span class="small ok-text">A correction covers {% if g.covered_ids|length == g.event_ids|length %}{{ 'this' if g.event_ids|length == 1 else 'all of these' }}{% else %}{{ g.covered_ids|length }} of {{ g.event_ids|length }}{% endif %} now &mdash; re-run to apply it.</span>{% endif %}
+      </div>
+      <div class="item-actions">
+        {% if g.covered_ids %}
+        <form method="post" action="/review/{{ g.latest_id }}/rerun">
+          <button>Re-run</button>
+        </form>
+        <a class="button secondary" href="/review/{{ g.latest_id }}">Fix match</a>
+        {% else %}
+        <a class="button" href="/review/{{ g.latest_id }}">Fix match</a>
+        {% endif %}
+        <details class="more">
+          <summary aria-label="More options">&hellip;</summary>
+          <div class="more-menu">
+            <a href="/activity/{{ g.latest_id }}">Why was it held?</a>
+            <form method="post" action="/review/{{ g.latest_id }}/dismiss">
+              <button class="link"
+                      onclick="return confirm('Dismiss {{ g.event_ids|length }} event(s)? Nothing is written to AniList.')">Dismiss</button>
+            </form>
+          </div>
+        </details>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% else %}
+<p class="empty">Nothing to review. Everything watched so far matched by id.</p>
+{% endif %}
+
+<section class="panel" id="corrections">
+  <h2>Corrections</h2>
+  {% if overrides %}
+  <div class="table-wrap">
+  <table class="log compact">
+    <thead><tr><th>Plex</th><th>AniList</th><th><span class="sr-only">Actions</span></th></tr></thead>
+    <tbody>
+    {% for o in overrides %}
+    <tr>
+      <td>
+        <strong>{{ o.show_title or o.scope_key }}</strong>
+        <span class="muted">S{{ '%02d' % o.season }} E{{ o.ep_from }}&ndash;{{ o.ep_to if o.ep_to is not none else 'end' }}</span>
+        {% if o.scope_type == 'tvdb' %}<span class="tag" title="Applies to every Plex show with this TVDB id">TVDB {{ o.scope_key }}</span>{% endif %}
+      </td>
+      <td>
+        <a href="https://anilist.co/anime/{{ o.anilist_id }}" target="_blank" rel="noreferrer">{{ o.anilist_title }}</a>
+        <span class="muted small">from episode {{ o.start }}{% if o.episodes %} of {{ o.episodes }}{% endif %}</span>
+      </td>
+      <td class="nowrap">
+        <form method="post" action="/review/corrections/{{ o.id }}/delete" class="inline">
+          <button class="link" onclick="return confirm('Delete this correction? Nothing already written to AniList changes.')">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="muted">None yet. Corrections you make here always win over the mapping datasets.</p>
+  {% endif %}
+</section>
+
+{% endblock %}

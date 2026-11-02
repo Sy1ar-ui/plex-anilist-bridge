@@ -47,15 +47,13 @@
   <nav>
     <a href="/" {% if here == '/' %}class="here" aria-current="page"{% endif %}>Dashboard</a>
     <a href="/activity" {% if here.startswith('/activity') %}class="here" aria-current="page"{% endif %}>Activity</a>
+    <a href="/review" {% if here.startswith('/review') %}class="here" aria-current="page"{% endif %}>Review{% if pending_review %} <span class="nav-count" title="{{ pending_review }} item(s) to review">{{ pending_review }}</span>{% endif %}</a>
     <a href="/system" {% if here == '/system' %}class="here" aria-current="page"{% endif %}>System</a>
     <a href="/settings" {% if here == '/settings' %}class="here" aria-current="page"{% endif %}>Settings</a>
   </nav>
   <div class="topbar-pills">
     {% if to_rate %}
     <a href="/#rate" class="pill pill-accent" title="Finished series waiting for your rating">{{ to_rate }} to rate</a>
-    {% endif %}
-    {% if pending_review %}
-    <a href="/activity?status=held" class="pill" title="Held or unmatched">{{ pending_review }} to review</a>
     {% endif %}
     {% if anilist.deferred %}
     <a href="/activity?status=deferred" class="pill pill-info" title="Waiting for AniList">{{ anilist.deferred }} deferred</a>
