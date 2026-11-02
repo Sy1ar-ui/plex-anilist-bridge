@@ -28,6 +28,11 @@ jobs:
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: ghcr.io/${{ github.repository }}
+          # latest=false is deliberate: metadata-action adds a ":latest" tag on
+          # a semver push by default, and nothing here should ever float. Every
+          # published reference is either an exact version or an exact commit.
+          flavor: |
+            latest=false
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
