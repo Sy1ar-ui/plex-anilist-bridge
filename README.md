@@ -373,6 +373,22 @@ docker compose up --build   # then open http://localhost:8787
 curl -s localhost:8787/health
 ```
 
+### Releasing
+
+The version is in four places: `app/config.py`, `pyproject.toml`,
+`docker-compose.yml` and `unraid-template.xml`. The last two pin the exact
+image tag, since nothing here uses `:latest`. `tests/test_version.py` fails if
+they disagree. Bump all four in the PR, merge it, then tag **the merge commit
+on `main`**:
+
+```bash
+git tag -a v0.2.0 -m "Release 0.2.0" && git push origin v0.2.0
+```
+
+The tag push is what publishes `ghcr.io/sy1ar-ui/plex-anilist-bridge:0.2.0`.
+Until it is pushed, the compose file and template on `main` name a tag that
+does not exist yet.
+
 ### Layout
 
 ```
