@@ -25,7 +25,7 @@ FROM ${BASE}
 LABEL org.opencontainers.image.title="plex-anilist-bridge" \
       org.opencontainers.image.description="Plex to AniList to MyAnimeList sync with an explain-everything web UI" \
       org.opencontainers.image.licenses="GPL-3.0-or-later" \
-      org.opencontainers.image.source="https://github.com/666Syner/plex-anilist-bridge"
+      org.opencontainers.image.source="https://github.com/Sy1ar-ui/plex-anilist-bridge"
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

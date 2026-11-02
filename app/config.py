@@ -30,4 +30,4 @@ DATASET_CACHE_DIR = CONFIG_DIR / "datasets"
 
 APP_NAME = "plex-anilist-bridge"
 APP_VERSION = "0.1.0"
-USER_AGENT = f"{APP_NAME}/{APP_VERSION} (+https://github.com/666Syner/plex-anilist-bridge)"
+USER_AGENT = f"{APP_NAME}/{APP_VERSION} (+https://github.com/Sy1ar-ui/plex-anilist-bridge)"

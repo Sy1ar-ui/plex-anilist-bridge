@@ -1,14 +1,14 @@
 <?xml version="1.0"?>
 <Container version="2">
   <Name>plex-anilist-bridge</Name>
-  <Repository>ghcr.io/666syner/plex-anilist-bridge:0.1.0</Repository>
-  <Registry>https://ghcr.io/666syner/plex-anilist-bridge</Registry>
+  <Repository>ghcr.io/sy1ar-ui/plex-anilist-bridge:0.1.0</Repository>
+  <Registry>https://ghcr.io/sy1ar-ui/plex-anilist-bridge</Registry>
   <Network>bridge</Network>
   <MyIP/>
   <Shell>sh</Shell>
   <Privileged>false</Privileged>
-  <Support>https://github.com/666Syner/plex-anilist-bridge/issues</Support>
-  <Project>https://github.com/666Syner/plex-anilist-bridge</Project>
+  <Support>https://github.com/Sy1ar-ui/plex-anilist-bridge/issues</Support>
+  <Project>https://github.com/Sy1ar-ui/plex-anilist-bridge</Project>
   <Overview>
     Syncs your Plex watch activity to AniList, and mirrors AniList to
     MyAnimeList. Event driven through Plex webhooks (Plex Pass required), with a
@@ -37,7 +37,7 @@
   <Category>MediaApp:Video Tools:Utilities</Category>
   <WebUI>http://[IP]:[PORT:8787]/</WebUI>
   <TemplateURL/>
-  <Icon>https://raw.githubusercontent.com/666Syner/plex-anilist-bridge/main/docs/icon.png</Icon>
+  <Icon>https://raw.githubusercontent.com/Sy1ar-ui/plex-anilist-bridge/main/docs/icon.png</Icon>
   <DonateText/>
   <DonateLink/>
   <Requires>Plex Pass, for webhooks.</Requires>

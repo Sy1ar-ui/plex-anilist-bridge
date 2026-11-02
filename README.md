@@ -104,7 +104,7 @@ Community Applications once published. The defaults are right for Unraid
 ### docker compose
 
 ```bash
-git clone https://github.com/666Syner/plex-anilist-bridge
+git clone https://github.com/Sy1ar-ui/plex-anilist-bridge
 cd plex-anilist-bridge
 docker compose up --build -d
 ```
