@@ -19,9 +19,9 @@ fixes, deliberately:
 > **Status.** The Plex → AniList leg, the mapping engine, the activity log and
 > settings are implemented, with dry-run on by default. The review queue,
 > search-and-link UI, setup wizard with OAuth, and the AniList → MAL leg are the
-> next stages — see [Roadmap](#roadmap). **130 tests pass** and every module
-> imports cleanly, but nothing has yet been run against a real Plex server; see
-> [Verifying a build](#verifying-a-build).
+> next stages — see [Roadmap](#roadmap). **140 tests pass in CI** and the image
+> builds for amd64 and arm64, but nothing has yet been run against a real Plex
+> server; see [what is and is not verified](#what-is-and-is-not-verified).
 
 ---
 
@@ -249,28 +249,27 @@ movies, override precedence and ranges, the never-decrease rule, score/notes
 never being written, rate-limit backoff, idempotent replays, and the account
 filter leaving no trace of another user's viewing.
 
-### Verifying a build
+### What is and is not verified
 
-This was developed on a machine with neither Python nor Docker installed, so the
-suite was run under CPython 3.13 in WebAssembly (Pyodide) instead. Results:
+CI runs the suite on CPython 3.12 and builds the image on every push. Latest run:
 
-- all 43 Python files compile, no syntax errors;
-- every module imports cleanly, `app.main` included — so the FastAPI app,
-  routes, template directory and static mount all construct;
-- **130 tests pass, 0 fail.**
+- **140 tests pass, 0 fail**;
+- the image builds for **linux/amd64 and linux/arm64** from the pinned base
+  digest and pushes to GHCR — so the `setpriv` privilege drop and the
+  dependency-free Python healthcheck survive a real build.
 
-The 10 tests that exercise the webhook *HTTP endpoint* could not run there:
-Starlette's `TestClient` needs an OS thread and WebAssembly has none
-(`RuntimeError: can't start new thread`). That is an environment limit, not a
-result — they should run normally under CPython. The pure account-filter tests,
-which are the ones that matter for the shared-server requirement, did run and
-pass.
+This was written on a machine with neither Python nor Docker, so before CI
+existed the suite ran under CPython 3.13 in WebAssembly (Pyodide). That covered
+130 of the 140: Starlette's `TestClient` needs an OS thread, which WebAssembly
+does not have, so the ten webhook *HTTP endpoint* tests could not run until CI.
+They pass there. The pure account-filter tests — the ones that matter for the
+shared-server guarantee — ran in both.
 
-So: the logic is tested, but nothing has been exercised against a real Plex
-server, a real AniList account or a real container. Start here:
+**Not verified:** nothing has been exercised against a real Plex server, a real
+AniList account, or a running container. That is the next step:
 
 ```bash
-pytest                      # expect the 10 endpoint tests to run and pass too
+pytest
 docker compose up --build   # then open http://localhost:8787
 curl -s localhost:8787/health
 ```
