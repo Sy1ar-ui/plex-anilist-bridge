@@ -5,8 +5,8 @@ works on a LAN with no internet access.
 
 The dashboard is for what needs you (setup, titles waiting for a rating) and
 what just happened; the System page holds the machinery (AniList API health,
-datasets, scheduled jobs, the webhook URL). The review queue, search-and-link
-and the visual range editor come next.
+datasets, scheduled jobs, the webhook URL). The review queue (/review) is where
+held and unmatched events are linked to AniList titles over episode ranges.
 """
 from __future__ import annotations
 
@@ -30,9 +30,10 @@ from app.anilist.client import (
 from app.anilist.client import health as anilist_health
 from app.anilist.client import limiter as anilist_limiter
 from app.datasets import refresh as dataset_refresh
+from app.mapping import engine
 from app.plex import client as plex_client
 from app.plex.client import PlexClient, PlexUnavailable
-from app.sync import completion, reconcile, retry
+from app.sync import completion, reconcile, retry, review
 from app.web import timefmt
 
 log = logging.getLogger(__name__)
@@ -101,7 +102,7 @@ def _base_context(request: Request, **extra: Any) -> dict[str, Any]:
         "request": request,
         "dry_run": settings_store.is_dry_run(),
         "password_set": auth.password_is_set(),
-        "pending_review": repo.pending_review_count(),
+        "pending_review": review.open_count(),
         "to_rate": completion.open_count(),
         "app_version": config.APP_VERSION,
         "anilist": anilist_status(),
@@ -667,6 +668,7 @@ async def activity_detail(
             trace=trace,
             writes=writes,
             retryable=event.get("status") in retry.RETRYABLE,
+            reviewable=event.get("status") in review.REVIEW_STATUSES,
             pending_rating=(
                 completion.open_for(int(event["anilist_id"]))
                 if event.get("status") == "awaiting_rating" and event.get("anilist_id")
@@ -689,3 +691,236 @@ def _redirect(path: str, notice: str, level: str = "info") -> RedirectResponse:
     if fragment:
         url += f"#{fragment}"
     return RedirectResponse(url, status_code=303)
+
+
+# --------------------------------------------------------------------------
+# review queue
+# --------------------------------------------------------------------------
+@router.get("/review", response_class=HTMLResponse)
+async def review_page(
+    request: Request, _: None = Depends(require_session), notice: str | None = None
+) -> HTMLResponse:
+    groups = review.open_groups()
+    for group in groups:
+        group.covered_ids = _now_overridden(group.event_ids)
+    context = _base_context(
+        request,
+        groups=groups,
+        overrides=review.list_overrides(),
+        notice=notice,
+    )
+    return templates.TemplateResponse(request, "review.html", context)
+
+
+def _now_overridden(event_ids: list[int]) -> list[int]:
+    """The events a manual correction would match if they were re-run now."""
+    covered = []
+    for event_id in event_ids:
+        event = repo.event_input(event_id)
+        if event is not None and engine.resolve(event).confidence == "override":
+            covered.append(event_id)
+    return covered
+
+
+@router.get("/review/{event_id}", response_class=HTMLResponse)
+async def review_link_page(
+    request: Request,
+    event_id: int,
+    _: None = Depends(require_session),
+    q: str | None = None,
+    anilist: str | None = None,
+    ep_from: str | None = None,
+    ep_to: str | None = None,
+    start: str | None = None,
+    scope: str = review.SCOPE_SHOW,
+    notice: str | None = None,
+) -> HTMLResponse:
+    group = review.group_for_event(event_id)
+    if group is None:
+        return _redirect("/review", "That item is no longer waiting for review.")
+
+    client = _anilist_for_ui()
+    results: list[dict[str, Any]] = []
+    search_error: str | None = None
+    query = (q or "").strip() or (group.title if anilist is None and not group.candidates else "")
+    if query:
+        if client is None:
+            search_error = "Connect AniList to search. You can still paste an AniList id or URL."
+        else:
+            try:
+                results = await client.search(query, per_page=10)
+                for media in results:
+                    repo.cache_media(media)
+            except AniListError as exc:
+                search_error = f"AniList search failed: {exc}. You can still paste an AniList id or URL."
+
+    chosen: dict[str, Any] | None = None
+    spec = None
+    rows: list[dict[str, Any]] = []
+    form_error: str | None = None
+    chosen_id = review.parse_anilist_ref(anilist)
+    if anilist and chosen_id is None:
+        form_error = "That is not an AniList id or anilist.co link."
+    if chosen_id is not None:
+        chosen = await _media_summary(chosen_id, client)
+        candidate = next((c for c in group.candidates if c["anilist_id"] == chosen_id), None)
+        if ep_from is None and start is None:
+            spec = review.suggest_range(group, candidate)
+        else:
+            try:
+                spec = review.parse_range(ep_from, ep_to, start)
+            except ValueError as exc:
+                form_error = str(exc)
+                spec = review.suggest_range(group, candidate)
+        rows = review.preview(
+            spec,
+            season_end=review.season_size(group.plex_guid, group.season),
+            total=chosen.get("episodes"),
+            watched=group.episodes,
+        )
+
+    if client is not None:
+        await client.__aexit__(None, None, None)
+
+    context = _base_context(
+        request,
+        group=group,
+        query=q or query,
+        results=results,
+        search_error=search_error,
+        chosen=chosen,
+        spec=spec,
+        rows=rows,
+        scope=scope if scope in (review.SCOPE_SHOW, review.SCOPE_TVDB) else review.SCOPE_SHOW,
+        season_end=review.season_size(group.plex_guid, group.season),
+        form_error=form_error,
+        notice=notice,
+    )
+    return templates.TemplateResponse(request, "review_link.html", context)
+
+
+@router.post("/review/{event_id}/link")
+async def review_link_save(
+    event_id: int,
+    _: None = Depends(require_session),
+    anilist: str = Form(...),
+    ep_from: str = Form("1"),
+    ep_to: str = Form(""),
+    start: str = Form("1"),
+    scope: str = Form(review.SCOPE_SHOW),
+):
+    group = review.group_for_event(event_id)
+    if group is None:
+        return _redirect("/review", "That item is no longer waiting for review.")
+    back = f"/review/{event_id}?anilist={_q(anilist)}&ep_from={_q(ep_from)}&ep_to={_q(ep_to)}&start={_q(start)}"
+
+    anilist_id = review.parse_anilist_ref(anilist)
+    if anilist_id is None:
+        return _redirect(back, "Not saved: that is not an AniList id or link.", "error")
+    try:
+        spec = review.parse_range(ep_from, ep_to, start)
+        review.save_override(group, anilist_id=anilist_id, spec=spec, scope=scope)
+    except ValueError as exc:
+        return _redirect(back, f"Not saved: {exc}.", "error")
+
+    message = f"Correction saved for {group.label}."
+    covered = review.covered_events(group, spec)
+    if not covered:
+        message += " None of the waiting episodes fall in that range, so they stay in the queue."
+        return _redirect("/review", message, "info")
+    outcome, ran = await _rerun(covered)
+    return _redirect("/review", f"{message} {outcome}", "ok" if ran else "info")
+
+
+@router.post("/review/{event_id}/rerun")
+async def review_rerun(event_id: int, _: None = Depends(require_session)):
+    group = review.group_for_event(event_id)
+    if group is None:
+        return _redirect("/review", "That item is no longer waiting for review.")
+    covered = _now_overridden(group.event_ids)
+    if not covered:
+        return _redirect("/review", "No correction covers these episodes yet.", "error")
+    outcome, ran = await _rerun(covered)
+    return _redirect("/review", outcome, "ok" if ran else "info")
+
+
+@router.post("/review/{event_id}/dismiss")
+async def review_dismiss(event_id: int, _: None = Depends(require_session)):
+    group = review.group_for_event(event_id)
+    if group is None:
+        return _redirect("/review", "That item is no longer waiting for review.")
+    count = review.dismiss(group)
+    return _redirect("/review", f"Dismissed {group.label} ({count} event(s)); nothing was written.", "ok")
+
+
+@router.post("/review/corrections/{override_id}/delete")
+async def review_delete_override(override_id: int, _: None = Depends(require_session)):
+    if review.delete_override(override_id):
+        return _redirect(
+            "/review#corrections",
+            "Correction deleted. Episodes watched from now on are matched by the datasets again; "
+            "nothing already written is changed.",
+            "ok",
+        )
+    return _redirect("/review#corrections", "That correction no longer exists.", "error")
+
+
+# Above this many events a re-run goes to the background rather than holding the page.
+_RERUN_INLINE = 10
+
+
+async def _rerun(event_ids: list[int]) -> tuple[str, bool]:
+    """Re-run events through the pipeline. Returns (message, whether it ran)."""
+    client = _anilist_for_ui(max_wait=30.0)
+    if client is None:
+        message = (
+            "AniList is not connected, so the episodes were not re-run yet; "
+            "use Re-run once it is."
+        )
+        return message, False
+    plex = None
+    try:
+        plex = plex_client.PlexClient.from_db()
+    except PlexUnavailable:
+        plex = None
+
+    async def run() -> str:
+        try:
+            report = await review.reprocess(event_ids, anilist=client, plex=plex)
+        finally:
+            await client.__aexit__(None, None, None)
+        return report.summary().capitalize() + "."
+
+    if len(event_ids) > _RERUN_INLINE:
+        _spawn(run())
+        return f"Re-running {len(event_ids)} event(s) in the background; see Activity.", True
+    return await run(), True
+
+
+def _anilist_for_ui(**kwargs) -> AniListClient | None:
+    kwargs.setdefault("max_wait", 15.0)
+    kwargs.setdefault("max_attempts", 2)
+    try:
+        return AniListClient.from_db(**kwargs)
+    except AniListAuthError:
+        return None
+
+
+async def _media_summary(anilist_id: int, client: AniListClient | None) -> dict[str, Any]:
+    """Title and episode count for the editor: the cache, else one AniList read."""
+    info = engine.media_info(anilist_id)
+    if (not info or not info.get("episodes")) and client is not None:
+        try:
+            _state, media = await client.media_with_entry(anilist_id)
+            repo.cache_media(media)
+            info = engine.media_info(anilist_id)
+        except AniListError:
+            pass
+    info = info or {}
+    return {
+        "anilist_id": anilist_id,
+        "title": info.get("title_english") or info.get("title_romaji") or f"AniList {anilist_id}",
+        "episodes": info.get("episodes"),
+        "format": info.get("format"),
+        "known": bool(info),
+    }

@@ -20,10 +20,10 @@ fixes, deliberately:
 | Config sprawl | Six environment variables, all optional. Everything else is in the UI. |
 | Title matching | Matching is by **ID** (TVDB/TMDB/IMDb → AniList), not by comparing title strings. |
 
-> **Status.** The Plex → AniList leg, the mapping engine, the activity log and
-> settings are implemented, with dry-run on by default. The review queue,
-> search-and-link UI, setup wizard with OAuth, and the AniList → MAL leg are the
-> next stages — see [Roadmap](#roadmap). The suite passes in CI and the image
+> **Status.** The Plex → AniList leg, the mapping engine, the activity log,
+> the review queue with search-and-link and the episode-range editor, and
+> settings are implemented, with dry-run on by default. The setup wizard with
+> OAuth and the AniList → MAL leg are the next stages — see [Roadmap](#roadmap). The suite passes in CI and the image
 > builds for amd64 and arm64, but nothing has yet been run against a real Plex
 > server; see [what is and is not verified](#what-is-and-is-not-verified).
 
@@ -201,9 +201,35 @@ The **Activity** log lists every event. Each row links to a "why?" page showing:
 - the exact API payload that was sent — or, in dry-run, that *would* have been
   sent, with the before and after state.
 
-Items that are uncertain or unmatched are held and counted in the top bar. The
-queue UI for fixing them, including the visual episode-range editor, is the next
-stage of work.
+### The review queue
+
+Items that are uncertain or unmatched are held, and listed on the **Review**
+page (with a count in the top bar). Episodes of one show and season are one
+item, so ten unmatched episodes are one thing to fix, not ten.
+
+**Fix match** opens a two-step page:
+
+1. **Pick the AniList title** — from the candidates the engine already
+   considered, an AniList search, or by pasting an AniList id or
+   `anilist.co/anime/…` link (which works even when AniList search cannot be
+   reached).
+2. **Set the episode range** — "Plex season 2 episodes 14 to *end* are AniList
+   episodes starting at 1". A strip underneath shows every Plex episode and the
+   AniList episode it becomes, highlights the ones waiting for review, and flags
+   any that would land past the end of the title. Waiting episodes the range
+   does not cover are listed, so you know they need a second correction (the
+   usual case for a split cour).
+
+A correction can apply to that Plex show only, or to every Plex show with the
+same TVDB id. Saving stores it as a manual correction — the layer that beats
+every dataset — and re-runs the covered episodes through the normal sync, so
+dry-run, never-decrease and the rating hold all still apply. Later episodes of
+that show need no review at all.
+
+Corrections are listed at the bottom of the Review page and can be deleted.
+Deleting one only changes how future episodes are matched; nothing already
+written to AniList is touched. An item that should not be synced can be
+**dismissed** instead, which writes nothing.
 
 Events that matched but could not reach AniList are **deferred**, not failed —
 see [When AniList is down or throttled](#when-anilist-is-down-or-throttled).
@@ -367,7 +393,7 @@ tests/          fixtures and the suite
 
 - [x] Webhook intake, account filter, mapping engine, fixture tests
 - [x] Plex → AniList in dry-run, activity log, settings page
-- [ ] Review queue, search-and-link, visual episode-range editor
+- [x] Review queue, search-and-link, visual episode-range editor
 - [ ] Setup wizard, Plex PIN link flow, AniList + MAL OAuth
 - [ ] AniList → MAL leg with the full-reconcile preview
 - [ ] Sonarr as an optional ID source
