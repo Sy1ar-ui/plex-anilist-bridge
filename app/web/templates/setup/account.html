@@ -1,0 +1,25 @@
+<h2>Your account</h2>
+{% if plex_error %}<p class="bad-text">{{ plex_error }}</p>{% endif %}
+{% if not has_server %}
+  <p class="muted">Connect a <a href="/setup/plex">Plex server</a> first; its accounts are listed here.</p>
+{% elif accounts %}
+  <p>Your server is shared, so pick yourself. Everyone else&rsquo;s viewing is discarded before anything
+     about it is read or logged.</p>
+  <form method="post" action="/setup/account">
+    <ul class="choices">
+      {% for a in accounts %}
+      <li><label>
+        <input type="radio" name="account_id" value="{{ a.id }}" data-name="{{ a.name }}" required
+               {% if chosen_account == a.id %}checked{% endif %}
+               onchange="document.getElementById('account_name').value = this.dataset.name">
+        {{ a.name }} {% if a.id == 1 %}<span class="muted small">server owner</span>{% endif %}
+      </label></li>
+      {% endfor %}
+    </ul>
+    <input type="hidden" name="account_name" id="account_name"
+           value="{% for a in accounts if a.id == chosen_account %}{{ a.name }}{% endfor %}">
+    <button>Save</button>
+  </form>
+{% else %}
+  <p class="muted">The server listed no accounts.</p>
+{% endif %}

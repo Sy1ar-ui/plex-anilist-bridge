@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Setup &middot; Plex AniList Bridge{% endblock %}
+{% block content %}
+
+<div class="setup-layout">
+  <nav class="setup-steps" aria-label="Setup steps">
+    <h1>Setup</h1>
+    <ol>
+      {% for s in steps %}
+      <li class="{{ 'here' if s.key == step }} {{ 'done' if s.done }}">
+        <a href="{{ s.href }}" {% if s.key == step %}aria-current="step"{% endif %}>
+          <span class="check-mark" aria-hidden="true">{{ '✓' if s.done else loop.index }}</span>
+          <span>{{ s.title }}{% if s.optional %} <span class="muted small">optional</span>{% endif %}</span>
+        </a>
+      </li>
+      {% endfor %}
+      <li class="{{ 'here' if step == 'done' }}">
+        <a href="/setup/done"><span class="check-mark" aria-hidden="true">&rarr;</span><span>Finish</span></a>
+      </li>
+    </ol>
+    <form method="post" action="/setup/finish">
+      <button class="link small">I&rsquo;ll finish later</button>
+    </form>
+  </nav>
+
+  <section class="panel setup-body">
+    {% include "setup/" ~ step ~ ".html" %}
+
+    {% if next_key and step != 'done' %}
+    <div class="setup-nav">
+      <a href="/setup/{{ next_key }}" class="{{ 'button' if current and current.done else 'muted' }}">
+        {% if current and current.done %}Next &rarr;{% else %}Skip this step{% endif %}
+      </a>
+    </div>
+    {% endif %}
+  </section>
+</div>
+
+{% endblock %}

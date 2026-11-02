@@ -1,0 +1,22 @@
+<h2>Anime libraries</h2>
+{% if plex_error %}<p class="bad-text">{{ plex_error }}</p>{% endif %}
+{% if not has_server %}
+  <p class="muted">Connect a <a href="/setup/plex">Plex server</a> first.</p>
+{% elif libraries %}
+  <p>Tick the libraries that hold anime. Everything else is ignored.
+     {% if suggested %}<span class="muted">The ticked ones are a guess from their names.</span>{% endif %}</p>
+  <form method="post" action="/setup/libraries">
+    <ul class="choices">
+      {% for lib in libraries %}
+      <li><label>
+        <input type="checkbox" name="section_id" value="{{ lib.section_id }}"
+               {% if lib.section_id in enabled_sections %}checked{% endif %}>
+        {{ lib.title }} <span class="muted small">{{ lib.kind }}</span>
+      </label></li>
+      {% endfor %}
+    </ul>
+    <button>Save</button>
+  </form>
+{% else %}
+  <p class="muted">The server has no libraries.</p>
+{% endif %}

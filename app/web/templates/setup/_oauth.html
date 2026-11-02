@@ -1,0 +1,44 @@
+{# Shared by the AniList and MyAnimeList steps. #}
+{% set name = 'AniList' if provider == 'anilist' else 'MyAnimeList' %}
+{% if token.present and token.status != 'broken' %}
+  <p class="ok">Connected to {{ name }}{% if token.account_name %} as {{ token.account_name }}{% endif %}.
+    {% if token.expires_at %}<span class="muted small">Token valid until {{ token.expires_at|day }}.</span>{% endif %}</p>
+{% elif token.status == 'broken' %}
+  <p class="bad-text">{{ token.last_error or ('The ' ~ name ~ ' token was rejected.') }} Sign in again below.</p>
+{% endif %}
+
+<ol class="setup-substeps">
+  <li>
+    <strong>Register an API client</strong> on <a href="{{ developer_url }}" target="_blank" rel="noreferrer">{{ name }}&rsquo;s developer page</a>
+    ({% if provider == 'anilist' %}&ldquo;Create New Client&rdquo;{% else %}&ldquo;Create ID&rdquo;, app type &ldquo;web&rdquo;{% endif %}),
+    with this redirect URL:
+    {% set copy_id = provider ~ '-redirect' %}
+    <div class="copy-row">
+      <pre class="copyable" id="{{ copy_id }}">{{ redirect_uri }}</pre>
+      <button type="button" class="secondary" data-copy="{{ copy_id }}">Copy</button>
+    </div>
+    <small>It must match exactly, so open this page at the same address you will use later.</small>
+  </li>
+  <li>
+    <strong>Enter the client details</strong>
+    <form method="post" action="/setup/{{ provider }}/client" class="client-form">
+      <label>Client ID
+        <input name="client_id" value="{{ client.client_id if client else '' }}" required autocomplete="off"
+               {% if provider == 'anilist' %}inputmode="numeric"{% endif %}>
+      </label>
+      <label>Client secret{% if provider == 'mal' %} <span class="muted small">(only if MyAnimeList gave you one)</span>{% endif %}
+        <input name="client_secret" type="password" autocomplete="off"
+               placeholder="{% if client and client.client_secret %}unchanged{% endif %}">
+      </label>
+      <button class="secondary">Save client</button>
+    </form>
+  </li>
+  <li>
+    <strong>Sign in</strong>
+    <form method="post" action="/setup/{{ provider }}/start">
+      <button {% if not client %}disabled title="Save the client first"{% endif %}>
+        {% if token.present %}Sign in to {{ name }} again{% else %}Sign in with {{ name }}{% endif %}
+      </button>
+    </form>
+  </li>
+</ol>

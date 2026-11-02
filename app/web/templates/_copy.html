@@ -1,33 +1,6 @@
-{# The webhook URL with a copy button. Include once per page; it brings its script. #}
+{# The webhook URL with a copy button. Include once per page. #}
 <div class="copy-row">
   <pre class="copyable" id="webhook-url">{{ webhook_url }}</pre>
   <button type="button" class="secondary" data-copy="webhook-url">Copy</button>
 </div>
-<script>
-  // The Clipboard API needs HTTPS or localhost, which a LAN install usually is
-  // not, so fall back to selecting the text for Ctrl+C.
-  document.querySelectorAll('[data-copy]').forEach(function (button) {
-    button.addEventListener('click', function () {
-      var source = document.getElementById(button.dataset.copy);
-      var text = source.textContent.trim();
-      function selectIt() {
-        var range = document.createRange();
-        range.selectNodeContents(source);
-        var selection = window.getSelection();
-        selection.removeAllRanges();
-        selection.addRange(range);
-        var copied = false;
-        try { copied = document.execCommand('copy'); } catch (e) {}
-        button.textContent = copied ? 'Copied' : 'Press Ctrl+C';
-      }
-      if (navigator.clipboard && window.isSecureContext) {
-        navigator.clipboard.writeText(text).then(function () {
-          button.textContent = 'Copied';
-        }, selectIt);
-      } else {
-        selectIt();
-      }
-      setTimeout(function () { button.textContent = 'Copy'; }, 2500);
-    });
-  });
-</script>
+{% include "_copy_script.html" %}

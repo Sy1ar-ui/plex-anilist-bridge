@@ -422,6 +422,47 @@ a.button.secondary:hover { border-color: var(--accent); filter: none; }
 .ep-key.ep-bad { border-color: var(--bad); background: var(--bad-bg); }
 fieldset.scope label.check { margin: 6px 0; }
 
+/* ---- setup wizard ------------------------------------------------------ */
+.setup-layout { display: grid; grid-template-columns: 220px 1fr; gap: 24px; align-items: start; }
+.setup-layout > * { min-width: 0; }   /* let long URLs scroll inside, not widen the page */
+.setup-steps h1 { font-size: 20px; margin-bottom: 12px; }
+.setup-steps ol { list-style: none; padding: 0; margin: 0 0 12px; display: grid; gap: 2px; }
+.setup-steps a {
+  display: flex; gap: 10px; align-items: center; padding: 7px 10px; border-radius: 6px;
+  color: var(--muted); text-decoration: none;
+}
+.setup-steps a:hover { background: var(--panel); color: var(--text); text-decoration: none; }
+.setup-steps li.here a { background: var(--panel); color: var(--text); font-weight: 600;
+                         box-shadow: inset 3px 0 0 var(--accent); }
+.setup-steps li.done .check-mark { background: var(--ok); border-color: var(--ok); color: #fff; }
+.setup-steps .check-mark { font-size: 11px; }
+.panel.setup-body { margin-top: 0; }
+.setup-body h2 { margin-bottom: 8px; }
+.setup-nav { display: flex; justify-content: flex-end; margin-top: 20px; padding-top: 14px;
+             border-top: 1px solid var(--line); }
+.setup-substeps { padding-left: 20px; margin: 12px 0; }
+.setup-substeps > li { margin-bottom: 18px; }
+.setup-substeps > li::marker { color: var(--muted); font-weight: 600; }
+.setup-substeps .copy-row { margin-top: 6px; }
+.client-form label { max-width: 460px; }
+.server-card { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin: 12px 0; }
+.server-card h3 { text-transform: none; letter-spacing: 0; font-size: 15px; color: var(--text); }
+.server-card code { font-size: 13px; overflow-wrap: anywhere; }
+.server-card ul.choices label { flex-wrap: wrap; }
+.spinner {
+  display: inline-block; width: 12px; height: 12px; margin-right: 6px; vertical-align: -1px;
+  border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+@media (max-width: 760px) {
+  .setup-layout { grid-template-columns: 1fr; gap: 12px; }
+  .setup-steps ol { grid-auto-flow: column; grid-auto-columns: max-content; overflow-x: auto; }
+  .setup-steps a > span:last-child { display: none; }
+  .setup-steps li.here a > span:last-child { display: inline; }
+}
+
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;

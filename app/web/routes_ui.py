@@ -159,27 +159,16 @@ async def dashboard(
     notice: str | None = None,
 ) -> HTMLResponse:
     """What needs you, and what just happened. The machinery is on /system."""
+    from app import setup as setup_state
+
+    if setup_state.is_fresh_install():
+        return RedirectResponse("/setup", status_code=303)
+
     server = plex_client.stored_server()
     account_row = db.query_one("SELECT id, name FROM plex_account LIMIT 1")
-    enabled = db.query("SELECT section_id FROM library WHERE enabled = 1 LIMIT 1")
-    token_status = tokens.all_statuses()
     datasets = dataset_refresh.status()
     last_webhook = _watermark("last_webhook")
-
-    setup_steps = [
-        {"label": "Connect your Plex server", "done": server is not None,
-         "href": "/settings#plex"},
-        {"label": "Choose which Plex account counts", "done": account_row is not None,
-         "href": "/settings#account"},
-        {"label": "Tick your anime libraries", "done": bool(enabled),
-         "href": "/settings#libraries"},
-        {"label": "Connect AniList", "done": token_status["anilist"].present,
-         "href": "/settings#anilist"},
-        {"label": "Set an admin password", "done": auth.password_is_set(),
-         "href": "/settings#password"},
-        {"label": "Add the webhook in Plex", "done": last_webhook is not None,
-         "href": "#setup-webhook"},
-    ]
+    setup_steps = setup_state.steps()
 
     context = _base_context(
         request,
@@ -193,7 +182,7 @@ async def dashboard(
         ratings=completion.list_open(),
         webhook_url=_webhook_url(request),
         setup_steps=setup_steps,
-        setup_remaining=sum(1 for step in setup_steps if not step["done"]),
+        setup_remaining=len(setup_state.remaining(setup_steps)),
         notice=notice,
     )
     return templates.TemplateResponse(request, "dashboard.html", context)
@@ -372,22 +361,7 @@ async def save_account(
 async def save_libraries(request: Request, _: None = Depends(require_session)):
     form = await request.form()
     chosen = {int(v) for v in form.getlist("section_id")}
-    server = plex_client.stored_server()
-    if server:
-        client = PlexClient(*server)
-        try:
-            libraries = await plex_client.run(client.libraries_sync)
-        except Exception:  # noqa: BLE001
-            libraries = []
-        with db.session() as conn:
-            for lib in libraries:
-                conn.execute(
-                    "INSERT INTO library (section_id, title, kind, enabled)"
-                    " VALUES (?, ?, ?, ?)"
-                    " ON CONFLICT (section_id) DO UPDATE SET title = excluded.title,"
-                    "   kind = excluded.kind, enabled = excluded.enabled",
-                    (lib.section_id, lib.title, lib.kind, 1 if lib.section_id in chosen else 0),
-                )
+    await plex_client.save_libraries_from_server(chosen)
     return _redirect("/settings#anilist", f"{len(chosen)} library(ies) enabled", "ok")
 
 
@@ -395,10 +369,20 @@ async def save_libraries(request: Request, _: None = Depends(require_session)):
 async def save_anilist_token(
     _: None = Depends(require_session), access_token: str = Form(...)
 ):
-    """Interim: paste a token. The OAuth browser flow replaces this in step 5."""
-    stripped = access_token.strip()
+    """Paste a token: the fallback for the OAuth sign-in in the setup wizard."""
+    message, level = await connect_anilist(access_token)
+    return _redirect("/settings#anilist", message, level)
+
+
+async def connect_anilist(access_token: str, *, expires_at=None) -> tuple[str, str]:
+    """Check a token against AniList and store it if it works. Returns (message, level).
+
+    Shared by the pasted-token form and the OAuth callback, so a token is
+    checked the same way however it arrived.
+    """
+    stripped = (access_token or "").strip()
     if not stripped:
-        return _redirect("/settings#anilist", "No token given", "error")
+        return "No token given", "error"
 
     # A token being *tried* must not mark the stored one broken if it is wrong,
     # must be allowed through an open circuit, and must not hang the page
@@ -413,19 +397,16 @@ async def save_anilist_token(
     try:
         viewer = await client.viewer()
     except AniListUnavailable as exc:
-        return _redirect(
-            "/settings#anilist",
-            f"AniList could not be reached, so the token was not checked or saved: {exc}",
-            "error",
-        )
+        return f"AniList could not be reached, so the token was not checked or saved: {exc}", "error"
     except (AniListAuthError, AniListError) as exc:
-        return _redirect("/settings#anilist", f"Token not saved: {exc}", "error")
+        return f"Token not saved: {exc}", "error"
     finally:
         await client.__aexit__(None, None, None)
 
     tokens.save(
         tokens.ANILIST,
         access_token=stripped,
+        expires_at=expires_at,
         account_name=viewer.get("name"),
         account_id=viewer.get("id"),
         status=tokens.STATUS_OK,
@@ -437,7 +418,7 @@ async def save_anilist_token(
         # Work deferred while the old token was broken can go now.
         _spawn(retry.retry_deferred(force=True))
         message += f" Retrying {waiting} waiting item(s) in the background."
-    return _redirect("/settings#anilist", message, "ok")
+    return message, "ok"
 
 
 @router.post("/settings/behaviour")

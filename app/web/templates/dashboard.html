@@ -7,9 +7,13 @@
 
 {% if setup_remaining %}
 <section class="panel setup">
-  <h2>Finish setting up <span class="muted small">{{ setup_steps|length - setup_remaining }} of {{ setup_steps|length }} done</span></h2>
+  {% set required = setup_steps|rejectattr('optional')|list %}
+  <div class="card-head">
+    <h2>Finish setting up <span class="muted small">{{ required|selectattr('done')|list|length }} of {{ required|length }} done</span></h2>
+    <a class="button" href="/setup">Continue setup</a>
+  </div>
   <ol class="checklist">
-    {% for step in setup_steps %}
+    {% for step in required %}
     <li class="{{ 'done' if step.done else 'todo' }}">
       <span class="check-mark" aria-hidden="true">{{ '✓' if step.done else '' }}</span>
       {% if step.done %}<span>{{ step.label }}</span>

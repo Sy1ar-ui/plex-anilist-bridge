@@ -21,11 +21,11 @@ fixes, deliberately:
 | Title matching | Matching is by **ID** (TVDB/TMDB/IMDb → AniList), not by comparing title strings. |
 
 > **Status.** The Plex → AniList leg, the mapping engine, the activity log,
-> the review queue with search-and-link and the episode-range editor, and
-> settings are implemented, with dry-run on by default. The setup wizard with
-> OAuth and the AniList → MAL leg are the next stages — see [Roadmap](#roadmap). The suite passes in CI and the image
+> the review queue, the setup wizard (Plex sign-in, AniList and MAL OAuth) and
+> settings are implemented, with dry-run on by default. The AniList → MAL leg is
+> the next stage — see [Roadmap](#roadmap). The suite passes in CI and the image
 > builds for amd64 and arm64, but nothing has yet been run against a real Plex
-> server; see [what is and is not verified](#what-is-and-is-not-verified).
+> server, AniList or MyAnimeList; see [what is and is not verified](#what-is-and-is-not-verified).
 
 ---
 
@@ -134,36 +134,42 @@ toggle, every interval — lives in the database and is set in the UI.
 
 ## Setting it up
 
-Open the UI and work down the Settings page. Nothing needs a restart.
+Open the UI. A fresh install starts in the **setup wizard**, which walks
+through each step in order; every step can be skipped and come back to, and
+nothing needs a restart.
 
-**1. Plex server.** The URL (`http://192.168.1.10:32400`) and a token. The
-connection is tested before it is saved.
+1. **Admin password** — first, because the following steps store tokens to
+   your accounts.
+2. **Plex** — **Sign in with Plex** sends you to plex.tv and back. The bridge
+   then lists your servers and tries every address Plex knows for each one
+   *from inside the container*, so you pick one that actually works from there
+   (an address that works in your browser may not work from a Docker network).
+   Only the chosen server's token is kept; your plex.tv account token is
+   discarded once the server is saved.
+3. **Your account** — your server is shared, so pick yourself. The account you
+   signed in with is preselected. Events from every other account are
+   discarded before anything about them is processed or logged — only a
+   counter moves. If no account is chosen, **nothing** is accepted.
+4. **Anime libraries** — libraries with "anime" in the name are pre-ticked.
+5. **AniList** — register an API client on AniList's developer page using the
+   redirect URL the wizard shows, enter its id and secret, and **Sign in with
+   AniList**. The token is checked against AniList before it is stored. AniList
+   tokens last a year.
+6. **MyAnimeList** (optional) — the same, with MAL's own client page. The MAL
+   sync is not built yet, so this can wait.
+7. **Plex webhook** — paste the URL into Plex; the page notices when the first
+   webhook arrives.
+
+Dry-run stays on throughout. Leave it on until you have watched the activity
+log for a while, then turn it off under *Settings → Sync*.
 
 <details>
-<summary>Getting a Plex token</summary>
+<summary>Doing it by hand instead</summary>
 
-Open any item in Plex Web, choose **Get Info → View XML**, and copy the
-`X-Plex-Token` value from the URL. The browser sign-in flow that replaces this
-paste box arrives with the setup wizard.
+The Settings page still takes a Plex server URL and token, and a pasted AniList
+access token. For a Plex token: open any item in Plex Web, choose **Get Info →
+View XML**, and copy the `X-Plex-Token` value from the URL.
 </details>
-
-**2. Which account counts.** Your server is shared, so pick yourself from the
-list of accounts. Events from every other account are discarded before anything
-about them is processed or logged — only a counter moves. There is a test that
-asserts no other user's show title can reach the database.
-
-If no account is chosen, **nothing** is accepted. Defaulting to "accept
-everything" on a shared server is the failure this is guarding against.
-
-**3. Anime libraries.** Tick the ones to watch.
-
-**4. AniList.** Paste an access token for now; it is verified against AniList
-before being stored.
-
-**5. Behaviour.** Dry-run is on. Leave it on until you have watched the activity
-log for a while.
-
-**6. Admin password.** Set one. This page holds tokens to your accounts.
 
 ### Plex webhook
 
@@ -186,8 +192,13 @@ which is a quick way to prove the path reaches the container.
 
 AniList and MyAnimeList both require an API client that **you** register — there
 is no way around it, and a shared client id cannot be shipped in a public GPL
-repository. That is two one-time form fills, walked through by the setup wizard
-when it lands. It is not ongoing configuration.
+repository. That is two one-time form fills, walked through by the setup
+wizard. It is not ongoing configuration.
+
+The redirect URL you register must match the address you open the bridge at
+(for example `http://192.168.1.10:8787/setup/anilist/callback`), so sign in from
+that same address. The sign-in uses a single-use, short-lived `state` value,
+and MyAnimeList's PKCE verifier never leaves the server.
 
 ---
 
@@ -382,10 +393,10 @@ they disagree. Bump all four in the PR, merge it, then tag **the merge commit
 on `main`**:
 
 ```bash
-git tag -a v0.2.0 -m "Release 0.2.0" && git push origin v0.2.0
+git tag -a v0.3.0 -m "Release 0.3.0" && git push origin v0.3.0
 ```
 
-The tag push is what publishes `ghcr.io/sy1ar-ui/plex-anilist-bridge:0.2.0`.
+The tag push is what publishes `ghcr.io/sy1ar-ui/plex-anilist-bridge:0.3.0`.
 Until it is pushed, the compose file and template on `main` name a tag that
 does not exist yet.
 
@@ -410,7 +421,7 @@ tests/          fixtures and the suite
 - [x] Webhook intake, account filter, mapping engine, fixture tests
 - [x] Plex → AniList in dry-run, activity log, settings page
 - [x] Review queue, search-and-link, visual episode-range editor
-- [ ] Setup wizard, Plex PIN link flow, AniList + MAL OAuth
+- [x] Setup wizard, Plex PIN link flow, AniList + MAL OAuth
 - [ ] AniList → MAL leg with the full-reconcile preview
 - [ ] Sonarr as an optional ID source
 
