@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from app import auth, config, db, repo, settings_store, tokens
 from app.datasets import refresh as dataset_refresh
 from app.logging_setup import setup_logging
-from app.web import routes_ui, routes_webhook
+from app.web import routes_setup, routes_ui, routes_webhook
 
 log = logging.getLogger(__name__)
 
@@ -102,6 +102,7 @@ def create_app() -> FastAPI:
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
     app.include_router(routes_webhook.router)
     app.include_router(routes_ui.router)
+    app.include_router(routes_setup.router)
 
     @app.get("/health")
     async def health() -> JSONResponse:

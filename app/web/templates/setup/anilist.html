@@ -1,0 +1,13 @@
+<h2>AniList</h2>
+<p>AniList is where your progress is written. AniList needs an API client that you register yourself;
+   it takes a minute and is done once.</p>
+{% set provider = 'anilist' %}
+{% include "setup/_oauth.html" %}
+<details class="advanced">
+  <summary>Or paste an access token instead</summary>
+  <form method="post" action="/setup/anilist/token">
+    <label>Access token <input name="access_token" type="password" required autocomplete="off"></label>
+    <button class="secondary">Check and save</button>
+  </form>
+</details>
+{% include "_copy_script.html" %}

@@ -1,0 +1,25 @@
+<h2>Plex webhook</h2>
+<p>In Plex, open <em>Settings &rarr; Webhooks &rarr; Add Webhook</em>, paste this URL and save.
+   Webhooks need Plex Pass.</p>
+{% include "_copy.html" %}
+<p class="muted small">The random part of the URL is a secret: treat it like a password.</p>
+<p id="webhook-wait" class="{{ 'ok' if last_webhook else '' }}" aria-live="polite">
+  {% if last_webhook %}A webhook arrived {{ last_webhook|ago }} &mdash; this step is done.
+  {% else %}<span class="spinner" aria-hidden="true"></span> Waiting for the first webhook&hellip; play and stop anything in Plex to send one.{% endif %}
+</p>
+{% if not last_webhook %}
+<script>
+  (function () {
+    var box = document.getElementById('webhook-wait');
+    function check() {
+      fetch('/setup/webhook/status', { credentials: 'same-origin' })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.received) { location.reload(); } else { setTimeout(check, 5000); }
+        })
+        .catch(function () { setTimeout(check, 10000); });
+    }
+    setTimeout(check, 5000);
+  })();
+</script>
+{% endif %}

@@ -1,0 +1,57 @@
+<h2>Plex server</h2>
+{% if plex_error %}<p class="bad-text">{{ plex_error }}</p>{% endif %}
+
+{% if signed_in %}
+  <p>Signed in to Plex as <strong>{{ signed_in.title or signed_in.username }}</strong>.
+     Pick the server, and an address it answers on <em>from this container</em>.</p>
+  {% if servers %}
+  {% for server in servers %}
+  <form method="post" action="/setup/plex/choose" class="server-card">
+    <input type="hidden" name="server_id" value="{{ server.client_id }}">
+    <h3>{{ server.name }} {% if not server.owned %}<span class="tag">shared with you</span>{% endif %}</h3>
+    <ul class="choices">
+      {% for c in server.connections %}
+      <li>
+        <label class="{{ 'muted' if not c.ok }}">
+          <input type="radio" name="uri" value="{{ c.uri }}" {% if not c.ok %}disabled{% endif %}
+                 {% if server.best and server.best.uri == c.uri %}checked{% endif %} required>
+          <code>{{ c.uri }}</code>
+          <span class="small">{{ c.label }}</span>
+          {% if c.ok %}<span class="tag tag-ok">works{% if c.latency_ms is not none %} &middot; {{ c.latency_ms }} ms{% endif %}</span>
+          {% else %}<span class="tag tag-error" title="{{ c.error }}">{{ c.error or 'no answer' }}</span>{% endif %}
+        </label>
+      </li>
+      {% endfor %}
+    </ul>
+    {% if server.best %}
+    <button>Use {{ server.name }}</button>
+    {% else %}
+    <p class="bad-text small">None of these addresses answered from here. If the bridge runs in Docker,
+       check it can reach your server's network, or enter the address by hand on the
+       <a href="/settings#plex">Settings page</a>.</p>
+    {% endif %}
+  </form>
+  {% endfor %}
+  {% elif not plex_error %}
+  <p class="muted">This Plex account has no servers.</p>
+  {% endif %}
+  <form method="post" action="/setup/plex/cancel" class="inline"><button class="link small">Sign in as someone else</button></form>
+
+{% elif waiting_for_pin %}
+  <p>Finish signing in on the Plex page that opened. If it did not bring you back here, check now:</p>
+  <div class="button-row">
+    <a class="button" href="/setup/plex/return">I&rsquo;ve signed in</a>
+    <form method="post" action="/setup/plex/start"><button class="secondary">Start again</button></form>
+  </div>
+
+{% else %}
+  {% if current_server %}
+  <p class="ok">Connected to {{ current_server.name or 'your server' }} <span class="muted small">{{ current_server.base_url }}</span></p>
+  {% endif %}
+  <p>Sign in with your Plex account and the bridge will find your servers. Nothing is ever written to Plex;
+     it only reads which show an episode belongs to, because Plex webhooks leave that out.</p>
+  <form method="post" action="/setup/plex/start">
+    <button>{% if current_server %}Sign in again{% else %}Sign in with Plex{% endif %}</button>
+  </form>
+  <p class="muted small">Prefer not to? Enter a server URL and token on the <a href="/settings#plex">Settings page</a>.</p>
+{% endif %}

@@ -110,6 +110,30 @@ def save_account(account: PlexAccountInfo) -> None:
         )
 
 
+def save_libraries(libraries: list[PlexLibraryInfo], chosen: set[int]) -> None:
+    """Record every library the server has, enabling the chosen ones."""
+    with db.session() as conn:
+        for lib in libraries:
+            conn.execute(
+                "INSERT INTO library (section_id, title, kind, enabled)"
+                " VALUES (?, ?, ?, ?)"
+                " ON CONFLICT (section_id) DO UPDATE SET title = excluded.title,"
+                "   kind = excluded.kind, enabled = excluded.enabled",
+                (lib.section_id, lib.title, lib.kind, 1 if lib.section_id in chosen else 0),
+            )
+
+
+async def save_libraries_from_server(chosen: set[int]) -> None:
+    server = stored_server()
+    if not server:
+        return
+    try:
+        libraries = await run(PlexClient(*server).libraries_sync)
+    except Exception:  # noqa: BLE001 - nothing to save if the server cannot be read
+        libraries = []
+    save_libraries(libraries, chosen)
+
+
 def enabled_section_ids() -> set[int]:
     return {int(r["section_id"]) for r in db.query("SELECT section_id FROM library WHERE enabled = 1")}
 

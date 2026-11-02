@@ -1,0 +1,16 @@
+<h2>{% if remaining %}Almost there{% else %}All set{% endif %}</h2>
+{% if remaining %}
+  <p>Still to do:</p>
+  <ul>
+    {% for s in remaining %}<li><a href="{{ s.href }}">{{ s.title }}</a></li>{% endfor %}
+  </ul>
+  <p class="muted">You can finish these later from the dashboard.</p>
+{% else %}
+  <p>Everything is connected.</p>
+{% endif %}
+<p><strong>Dry run is {{ 'on' if dry_run else 'off' }}.</strong>
+  {% if dry_run %}Nothing is written to AniList yet: each event shows what <em>would</em> have been written.
+  Watch the Activity page for a while, then turn it off in <a href="/settings#behaviour">Settings</a>.{% endif %}</p>
+<form method="post" action="/setup/finish">
+  <button>Go to the dashboard</button>
+</form>

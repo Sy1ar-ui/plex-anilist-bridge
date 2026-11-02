@@ -29,6 +29,8 @@ def make_event(**kw):
 @pytest.fixture
 def ui(datasets, settings):
     # No `with`: the lifespan (scheduler, dataset download) is not started.
+    # Setup is marked dismissed so "/" is the dashboard, not the wizard.
+    settings_store.set("setup_complete", True)
     return TestClient(create_app())
 
 
@@ -58,7 +60,13 @@ def trip_circuit() -> None:
 # --------------------------------------------------------------------------
 # pages render
 # --------------------------------------------------------------------------
-def test_the_dashboard_renders_on_a_fresh_install(ui):
+def test_a_fresh_install_starts_in_the_setup_wizard(datasets, settings):
+    page = TestClient(create_app()).get("/", follow_redirects=False)
+    assert page.status_code == 303
+    assert page.headers["location"] == "/setup"
+
+
+def test_the_dashboard_shows_what_is_left_after_setup_is_put_off(ui):
     page = ui.get("/")
     assert page.status_code == 200
     assert "Finish setting up" in page.text

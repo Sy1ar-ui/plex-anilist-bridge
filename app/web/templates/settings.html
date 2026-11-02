@@ -24,7 +24,8 @@
     </label>
     <label>Token
       <input name="token" type="password" placeholder="{% if plex_token_set %}unchanged{% else %}X-Plex-Token{% endif %}">
-      <small>Needed because Plex webhooks leave out a show&rsquo;s TVDB/TMDB ids, so they are read from the server.</small>
+      <small>Needed because Plex webhooks leave out a show&rsquo;s TVDB/TMDB ids, so they are read from the server.
+        Easier: <a href="/setup/plex">sign in with Plex</a> and pick the server.</small>
     </label>
     <button>Save and test</button>
   </form>
@@ -94,7 +95,7 @@
   <form method="post" action="/settings/anilist-token">
     <label>Access token
       <input name="access_token" type="password" required>
-      <small>Checked against AniList before it is stored. The browser sign-in flow will replace this box.</small>
+      <small>Checked against AniList before it is stored. Easier: <a href="/setup/anilist">sign in with AniList</a>.</small>
     </label>
     <button>Save and verify</button>
   </form>
