@@ -120,7 +120,8 @@ def save(
 
 
 def mark_broken(provider: str, error: str) -> None:
-    """Record a token failure so the UI can shout about it."""
+    """Record a token failure so the UI can shout about it, and say so once."""
+    was_broken = get(provider).status == STATUS_BROKEN
     db.execute(
         "INSERT INTO oauth_token (provider, status, last_error, updated_at)"
         " VALUES (?, ?, ?, datetime('now'))"
@@ -130,6 +131,10 @@ def mark_broken(provider: str, error: str) -> None:
         (provider, STATUS_BROKEN, error),
     )
     log.error("token broken", extra={"provider": provider, "error": error})
+    if not was_broken:
+        from app import notify
+
+        notify.token_rejected(provider, error)
 
 
 def all_statuses() -> dict[str, TokenRecord]:

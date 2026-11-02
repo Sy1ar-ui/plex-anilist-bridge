@@ -12,6 +12,7 @@
   <a href="#anilist">AniList</a>
   <a href="#behaviour">Sync</a>
   <a href="#mal">MyAnimeList</a>
+  <a href="#notifications">Notifications</a>
   <a href="#advanced">Advanced</a>
   <a href="#password">Password</a>
 </nav>
@@ -179,8 +180,46 @@
       </label>
     </fieldset>
 
+    <fieldset id="notifications">
+      <legend>Notifications</legend>
+      <label>Webhook URL
+        <input name="notify_webhook_url" value="{{ settings.notify_webhook_url }}"
+               placeholder="https://discord.com/api/webhooks/... or https://ntfy.sh/your-topic" autocomplete="off">
+        <small>A Discord webhook, an ntfy topic, or any URL that accepts a JSON POST. Treat it like a password.</small>
+      </label>
+      <label>Format
+        <select name="notify_service">
+          {% for value, label in [('auto', 'Work it out from the URL'), ('discord', 'Discord'), ('ntfy', 'ntfy'), ('json', 'Plain JSON')] %}
+          <option value="{{ value }}" {% if settings.notify_service == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="check">
+        <input type="checkbox" name="notify_on_rating" {% if settings.notify_on_rating %}checked{% endif %}>
+        A finished series is ready to rate
+      </label>
+      <label class="check">
+        <input type="checkbox" name="notify_on_review" {% if settings.notify_on_review %}checked{% endif %}>
+        Something needs review (once per show and season)
+      </label>
+      <label class="check">
+        <input type="checkbox" name="notify_on_token_error" {% if settings.notify_on_token_error %}checked{% endif %}>
+        AniList or MyAnimeList needs you to sign in again
+      </label>
+      <button class="secondary" formaction="/settings/notify-test" formnovalidate>Send a test</button>
+      {% if notifications %}
+      <ul class="notify-log small">
+        {% for n in notifications %}
+        <li><span class="tag tag-{{ 'written' if n.result == 'sent' else ('error' if n.result == 'failed' else 'held') }}">{{ n.result }}</span>
+          {{ n.title }} <span class="muted">{{ n.at|ago }}</span>
+          {% if n.error %}<br><span class="bad-text">{{ n.error }}</span>{% endif %}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </fieldset>
+
     <details class="advanced" id="advanced">
-      <summary>Advanced: schedules, outages, notifications</summary>
+      <summary>Advanced: schedules and outages</summary>
 
       <fieldset>
         <legend>Schedules</legend>
@@ -216,14 +255,6 @@
         </label>
       </fieldset>
 
-      <fieldset>
-        <legend>Notifications</legend>
-        <label>Webhook URL (Discord or ntfy)
-          <input name="notify_webhook_url" value="{{ settings.notify_webhook_url }}"
-                 placeholder="https://discord.com/api/webhooks/...">
-          <small>Not sent yet; notifications are on the roadmap.</small>
-        </label>
-      </fieldset>
     </details>
 
     <button>Save settings</button>

@@ -311,6 +311,28 @@ reads both whole lists and shows every difference before anything is written:
 **Apply ticked** writes just those, through the same dry-run gate. If MAL fails
 part-way, the rest stay ticked for another try.
 
+## Notifications
+
+Set a webhook under *Settings → Sync → Notifications* to hear when something
+needs you:
+
+- **a finished series is ready to rate** (once per series);
+- **something needs review** (once per show and season, not per episode);
+- **AniList or MyAnimeList wants you to sign in again** (once, when the token is
+  first rejected, then at most daily).
+
+Each can be switched off. The URL can be a Discord webhook, an ntfy topic
+(`https://ntfy.sh/your-topic` or your own server), or anything that accepts a
+JSON POST; the format is worked out from the URL unless you choose it. **Send a
+test** tries the URL in the box before you save it, and the last few sends are
+listed with any error.
+
+Notifications are sent in the background with a short timeout, so a slow or
+broken webhook never delays or fails a sync. They link back to the right page,
+using the address you last opened the UI at. Discord mentions are disabled, so
+a show title can never ping anyone. Only your own viewing can cause one: other
+accounts' events are dropped before any of this runs.
+
 ---
 
 ## Operational notes
@@ -434,14 +456,14 @@ they disagree. Bump all four in the PR, merge it, then tag **the merge commit
 on `main`**:
 
 ```bash
-git tag -a v0.4.0 -m "Release 0.4.0" && git push origin v0.4.0
+git tag -a v0.5.0 -m "Release 0.5.0" && git push origin v0.5.0
 ```
 
-The tag push is what publishes `ghcr.io/sy1ar-ui/plex-anilist-bridge:0.4.0`.
+The tag push is what publishes `ghcr.io/sy1ar-ui/plex-anilist-bridge:0.5.0`.
 The image workflow first runs `scripts/check_release_tag.py`, which fails the
 build unless the tag is exactly `v` plus the version in `app/config.py`, so a
 mistyped tag or one on the wrong commit fails instead of publishing. Run it
-yourself before pushing a tag: `python3 scripts/check_release_tag.py v0.4.0`.
+yourself before pushing a tag: `python3 scripts/check_release_tag.py v0.5.0`.
 Until it is pushed, the compose file and template on `main` name a tag that
 does not exist yet.
 

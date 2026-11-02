@@ -96,7 +96,15 @@ def require_session(request: Request) -> None:
     raise HTTPException(status_code=303, headers={"Location": "/login"})
 
 
+def _remember_base_url(request: Request) -> None:
+    """Where the UI is reached, so a notification can link back to it."""
+    base = str(request.base_url).rstrip("/")
+    if base and settings_store.get("ui_base_url", "") != base:
+        settings_store.set("ui_base_url", base)
+
+
 def _base_context(request: Request, **extra: Any) -> dict[str, Any]:
+    _remember_base_url(request)
     level = request.query_params.get("level", "info")
     context = {
         "request": request,
@@ -318,9 +326,16 @@ async def settings_page(
         enabled_sections=enabled,
         chosen_account=int(account_row["id"]) if account_row else None,
         token_status=tokens.all_statuses(),
+        notifications=_recent_notifications(),
         notice=notice,
     )
     return templates.TemplateResponse(request, "settings.html", context)
+
+
+def _recent_notifications() -> list[dict[str, Any]]:
+    from app import notify
+
+    return notify.recent()
 
 
 @router.post("/settings/plex")
@@ -483,10 +498,31 @@ async def save_behaviour(request: Request, _: None = Depends(require_session)):
                 "anilist_max_wait_seconds", 120, low=5, high=600
             ),
             "notify_webhook_url": str(form.get("notify_webhook_url", "")).strip(),
+            "notify_service": (
+                str(form.get("notify_service"))
+                if form.get("notify_service") in ("auto", "discord", "ntfy", "json")
+                else "auto"
+            ),
+            "notify_on_review": flag("notify_on_review"),
+            "notify_on_rating": flag("notify_on_rating"),
+            "notify_on_token_error": flag("notify_on_token_error"),
         }
     )
     scheduler.apply_settings()
     return _redirect("/settings#behaviour", "Settings saved", "ok")
+
+
+@router.post("/settings/notify-test")
+async def notify_test(request: Request, _: None = Depends(require_session)):
+    """Send a test to the URL in the form, saved or not. Saving is separate."""
+    from app import notify
+
+    form = await request.form()
+    ok, message = await notify.send_test(
+        url=str(form.get("notify_webhook_url", "") or "").strip() or None,
+        service_name=str(form.get("notify_service", "") or "") or None,
+    )
+    return _redirect("/settings#notifications", message, "ok" if ok else "error")
 
 
 @router.post("/settings/password")

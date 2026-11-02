@@ -68,7 +68,14 @@ def record_pending(
             " ON CONFLICT (anilist_id) WHERE status IN ('awaiting', 'queued') DO NOTHING",
             (anilist_id, event_id, title, total_episodes, completed_on.isoformat(), AWAITING),
         )
-        return bool(cursor.rowcount)
+        created = bool(cursor.rowcount)
+        pending_id = cursor.lastrowid
+    if created:
+        from app import notify
+
+        notify.ready_to_rate(pending_id=int(pending_id), title=title, total_episodes=total_episodes,
+                             completed_on=completed_on.isoformat())
+    return created
 
 
 def get(pending_id: int) -> dict[str, Any] | None:

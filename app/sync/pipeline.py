@@ -28,7 +28,7 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 
-from app import repo, settings_store
+from app import notify, repo, settings_store
 from app.anilist.client import (
     AniListAuthError,
     AniListClient,
@@ -129,6 +129,12 @@ async def handle_watch_event(
 
     def finish(status: str, detail: str, match: MatchResult | None = None, **kw) -> EventResult:
         repo.finalise_event(stored.id, status=status, detail=detail, match=match, **kw)
+        if status in (STATUS_HELD, STATUS_UNMATCHED):
+            notify.review_needed(
+                event_id=stored.id, show_title=event.show.title, season=event.season,
+                media_kind=event.media_kind, plex_guid=event.show.plex_guid,
+                reason=(match.summary if match else detail),
+            )
         return EventResult(stored.id, status, detail, stored.is_new, match)
 
     def defer(exc: AniListError, match: MatchResult | None = None, **kw) -> EventResult:

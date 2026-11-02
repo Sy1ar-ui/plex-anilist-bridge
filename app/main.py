@@ -82,6 +82,11 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        from app import notify
+
+        # Give any notification still being sent a moment to finish.
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(notify.drain(), timeout=5)
         scheduler.shutdown()
         if task is not None and not task.done():
             task.cancel()
