@@ -99,3 +99,46 @@ def webhook_path_token() -> str:
 
 def webhook_token_matches(candidate: str) -> bool:
     return hmac.compare_digest(candidate, webhook_path_token())
+
+
+# --------------------------------------------------------------------------
+# the agent API token
+# --------------------------------------------------------------------------
+# One bearer token for /api/v1, for a personal agent (OpenClaw, Hermes, a
+# script) acting for the user. It is shown once when generated; only its
+# SHA-256 is stored, so the database never holds a usable token. A token is
+# high-entropy random, so a fast hash is the right tool here (unlike a
+# password, which needs scrypt).
+API_TOKEN_PREFIX = "pab_"
+
+
+def _token_digest(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def issue_api_token() -> str:
+    """Replace any existing API token with a new one. Returns it; it is not stored."""
+    token = API_TOKEN_PREFIX + secrets.token_urlsafe(32)
+    settings_store.set_many({"api_token_hash": _token_digest(token), "api_token_created": int(time.time()),
+                             "api_token_last_used": 0})
+    return token
+
+
+def revoke_api_token() -> None:
+    settings_store.set_many({"api_token_hash": "", "api_token_created": 0, "api_token_last_used": 0})
+
+
+def api_enabled() -> bool:
+    return bool(settings_store.get("api_token_hash", ""))
+
+
+def api_token_valid(candidate: str | None) -> bool:
+    stored = str(settings_store.get("api_token_hash", "") or "")
+    if not stored or not candidate:
+        return False
+    if not hmac.compare_digest(_token_digest(candidate), stored):
+        return False
+    now = int(time.time())
+    if now - int(settings_store.get("api_token_last_used", 0) or 0) > 60:   # do not write on every call
+        settings_store.set("api_token_last_used", now)
+    return True

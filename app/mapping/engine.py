@@ -564,10 +564,51 @@ def resolve(event: WatchEvent) -> MatchResult:
         if result is not None:
             return result
 
-    steps.append(TraceStep(LAYER_SONARR, "skipped", "Sonarr id recovery is not configured"))
+    recovered = _layer_sonarr(event, steps)
+    if recovered is not None:
+        return recovered
+
     detail = (
         f"nothing matched {event.show.describe()}"
         f" S{event.season:02d}E{event.episode:02d}:"
         " no manual correction, not in either mapping dataset"
     )
     return MatchResult(confidence="unmatched", summary=detail, steps=steps)
+
+
+# --------------------------------------------------------------------------
+# layer 4: Sonarr, to recover a TVDB id Plex did not give
+# --------------------------------------------------------------------------
+def _layer_sonarr(event: WatchEvent, steps: list[TraceStep]) -> MatchResult | None:
+    """Look the show up in the cached Sonarr list, then retry the TVDB layers.
+
+    A recovery by title is a guess, so whatever it leads to is only uncertain.
+    """
+    from dataclasses import replace
+
+    from app import sonarr
+
+    if event.show.tvdb_id:
+        steps.append(TraceStep(LAYER_SONARR, "skipped", "Plex gave a TVDB id, so Sonarr was not needed"))
+        return None
+    recovery, why = sonarr.lookup(event.show)
+    if recovery is None:
+        outcome = "rejected" if "needs a human" in why else ("skipped" if "not set up" in why else "miss")
+        steps.append(TraceStep(LAYER_SONARR, outcome, why))
+        return None
+    steps.append(TraceStep(LAYER_SONARR, "hit", why))
+
+    retry = replace(event, show=replace(event.show, tvdb_id=recovery.tvdb_id))
+    for layer in (_layer_override, _layer_fribb):
+        result = layer(retry, steps)
+        if result is None:
+            continue
+        result.summary = f"{recovery.describe()}; {result.summary}"
+        if not recovery.certain and result.confidence in ("confident", "override"):
+            result.confidence = "uncertain"
+            result.summary += "; held as uncertain because Sonarr matched on title only"
+        return result
+
+    steps.append(TraceStep(LAYER_SONARR, "miss",
+                           f"TVDB {recovery.tvdb_id} is not in the mapping datasets either"))
+    return None

@@ -35,11 +35,23 @@ DEFAULTS: dict[str, Any] = {
     "mal_sync_dates": False,
     # --- datasets -----------------------------------------------------------
     "dataset_refresh_hours": 24,
+    # --- Sonarr (optional; recovers TVDB ids Plex does not give) -------------
+    "sonarr_url": "",
+    "sonarr_api_key": "",
+    "sonarr_refresh_hours": 6,
+    "sonarr_last_error": "",
     # --- notifications ------------------------------------------------------
     "notify_webhook_url": "",
+    "notify_service": "auto",         # auto | discord | ntfy | json | openclaw | hermes
+    "notify_secret": "",              # OpenClaw hook token or Hermes route secret
     "notify_on_review": True,
+    "notify_on_rating": True,
     "notify_on_token_error": True,
+    "ui_base_url": "",                # where the UI was last opened, for links in notifications
     # --- internal -----------------------------------------------------------
+    "api_token_hash": "",             # SHA-256 of the agent API token; empty = API off
+    "api_token_created": 0,
+    "api_token_last_used": 0,
     "webhook_path_token": "",         # generated on first run
     "admin_password_hash": "",        # empty = no password set yet
     "setup_complete": False,

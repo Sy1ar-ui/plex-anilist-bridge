@@ -21,6 +21,7 @@ JOB_DATASETS = "dataset_refresh"
 JOB_RECONCILE = "plex_reconcile"
 JOB_ANILIST_RETRY = "anilist_retry"
 JOB_MAL = "mal_mirror"
+JOB_SONARR = "sonarr_refresh"
 
 _scheduler: AsyncIOScheduler | None = None
 
@@ -56,6 +57,21 @@ async def _mal_job() -> None:
         await mal_sync.poll()
     except Exception:  # noqa: BLE001
         log.exception("MAL mirror job failed")
+
+
+async def _sonarr_job() -> None:
+    from app import settings_store as store
+    from app import sonarr
+
+    if sonarr.configured() is None:
+        return
+    try:
+        await sonarr.refresh()
+    except sonarr.SonarrError as exc:
+        store.set("sonarr_last_error", str(exc))
+        log.warning("Sonarr refresh failed", extra={"error": str(exc)})
+    except Exception:  # noqa: BLE001
+        log.exception("Sonarr refresh job failed")
 
 
 def _minutes(settings: dict, key: str, default: int, *, low: int = 1, high: int = 1440) -> int:
@@ -107,6 +123,15 @@ def start() -> AsyncIOScheduler:
         coalesce=True,
     )
 
+    scheduler.add_job(
+        _sonarr_job,
+        IntervalTrigger(hours=max(1, int(settings.get("sonarr_refresh_hours", 6)))),
+        id=JOB_SONARR,
+        name="Refresh the Sonarr series list",
+        max_instances=1,
+        coalesce=True,
+    )
+
     scheduler.start()
     _scheduler = scheduler
     log.info("scheduler started", extra={"jobs": [j.id for j in scheduler.get_jobs()]})
@@ -129,6 +154,7 @@ def apply_settings() -> None:
         minutes=_minutes(settings, "anilist_retry_interval_minutes", 5),
     )
     _reschedule(JOB_MAL, minutes=_minutes(settings, "mal_poll_interval_minutes", 15, low=5))
+    _reschedule(JOB_SONARR, hours=max(1, int(settings.get("sonarr_refresh_hours", 6))))
 
 
 def _reschedule(job_id: str, **interval) -> None:

@@ -161,8 +161,8 @@ def upsert_show(ids: ShowIds, *, rating_key: str | None, section_id: int | None)
         return
     db.execute(
         "INSERT INTO show (plex_guid, rating_key, section_id, title, year, tvdb_id,"
-        " tmdb_id, imdb_id, last_seen)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))"
+        " tmdb_id, imdb_id, folder, last_seen)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))"
         " ON CONFLICT (plex_guid) DO UPDATE SET"
         "   rating_key = COALESCE(excluded.rating_key, show.rating_key),"
         "   section_id = COALESCE(excluded.section_id, show.section_id),"
@@ -171,6 +171,7 @@ def upsert_show(ids: ShowIds, *, rating_key: str | None, section_id: int | None)
         "   tvdb_id = COALESCE(excluded.tvdb_id, show.tvdb_id),"
         "   tmdb_id = COALESCE(excluded.tmdb_id, show.tmdb_id),"
         "   imdb_id = COALESCE(excluded.imdb_id, show.imdb_id),"
+        "   folder = COALESCE(excluded.folder, show.folder),"
         "   last_seen = excluded.last_seen",
         (
             ids.plex_guid,
@@ -181,6 +182,7 @@ def upsert_show(ids: ShowIds, *, rating_key: str | None, section_id: int | None)
             ids.tvdb_id,
             ids.tmdb_id,
             ids.imdb_id,
+            ids.folder,
         ),
     )
 
@@ -414,6 +416,7 @@ def event_input(event_id: int) -> WatchEvent | None:
         imdb_id=show_row["imdb_id"] if show_row else None,
         title=row["show_title"] or (show_row["title"] if show_row else None),
         year=show_row["year"] if show_row else None,
+        folder=show_row["folder"] if show_row else None,
     )
 
     def parse(value: str | None) -> datetime | None:

@@ -179,7 +179,17 @@ def show_ids_from_item(item: Any) -> ShowIds:
         imdb_id=ids["imdb_id"],
         title=getattr(item, "title", None),
         year=getattr(item, "year", None),
+        folder=folder_name(getattr(item, "locations", None)),
     )
+
+
+def folder_name(locations: Any) -> str | None:
+    """The last component of a show's first folder, whatever the OS or mount."""
+    if not locations:
+        return None
+    first = str(next(iter(locations))).replace("\\", "/").rstrip("/")
+    name = first.rsplit("/", 1)[-1].strip()
+    return name or None
 
 
 # --------------------------------------------------------------------------

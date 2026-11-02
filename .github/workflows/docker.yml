@@ -16,6 +16,13 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
+      # A release tag must be exactly "v" + the version in app/config.py.
+      # Without this, "v.0.3.0" published no version image and still went
+      # green, and "v0.3.0" on the 0.4.0 commit published 0.4.0 as 0.3.0.
+      - name: Check the tag matches the app version
+        if: github.ref_type == 'tag'
+        run: python3 scripts/check_release_tag.py "$GITHUB_REF_NAME"
+
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3

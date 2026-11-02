@@ -14,7 +14,7 @@ import asyncio
 import logging
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -96,7 +96,15 @@ def require_session(request: Request) -> None:
     raise HTTPException(status_code=303, headers={"Location": "/login"})
 
 
+def _remember_base_url(request: Request) -> None:
+    """Where the UI is reached, so a notification can link back to it."""
+    base = str(request.base_url).rstrip("/")
+    if base and settings_store.get("ui_base_url", "") != base:
+        settings_store.set("ui_base_url", base)
+
+
 def _base_context(request: Request, **extra: Any) -> dict[str, Any]:
+    _remember_base_url(request)
     level = request.query_params.get("level", "info")
     context = {
         "request": request,
@@ -223,6 +231,7 @@ async def system_page(
         webhook_url=_webhook_url(request),
         jobs=scheduler.job_states(),
         mal_blocked=_mal_blocked(),
+        sonarr=_sonarr_status(),
         mal_last_poll=_watermark("mal_last_poll"),
         mal_last_summary=_watermark("mal_last_poll_summary"),
         notice=notice,
@@ -285,6 +294,13 @@ def _webhook_url(request: Request) -> str:
 async def settings_page(
     request: Request, _: None = Depends(require_session), notice: str | None = None
 ) -> HTMLResponse:
+    return await _render_settings(request, notice=notice)
+
+
+async def _render_settings(
+    request: Request, *, notice: str | None = None, new_api_token: str | None = None
+) -> HTMLResponse:
+    """The settings page. ``new_api_token`` is only ever passed by the generate action."""
     server = plex_client.stored_server()
     accounts: list[dict[str, Any]] = []
     libraries: list[dict[str, Any]] = []
@@ -318,9 +334,27 @@ async def settings_page(
         enabled_sections=enabled,
         chosen_account=int(account_row["id"]) if account_row else None,
         token_status=tokens.all_statuses(),
+        notifications=_recent_notifications(),
+        sonarr=_sonarr_status(),
+        api_enabled=auth.api_enabled(),
+        api_last_used=settings_store.get("api_token_last_used", 0) or 0,
+        api_base=str(request.base_url).rstrip("/") + "/api/v1",
+        new_api_token=new_api_token,
         notice=notice,
     )
     return templates.TemplateResponse(request, "settings.html", context)
+
+
+def _sonarr_status() -> dict[str, Any]:
+    from app import sonarr
+
+    return sonarr.status()
+
+
+def _recent_notifications() -> list[dict[str, Any]]:
+    from app import notify
+
+    return notify.recent()
 
 
 @router.post("/settings/plex")
@@ -483,10 +517,95 @@ async def save_behaviour(request: Request, _: None = Depends(require_session)):
                 "anilist_max_wait_seconds", 120, low=5, high=600
             ),
             "notify_webhook_url": str(form.get("notify_webhook_url", "")).strip(),
+            "notify_service": (
+                str(form.get("notify_service"))
+                if form.get("notify_service") in ("auto", "discord", "ntfy", "json", "openclaw", "hermes")
+                else "auto"
+            ),
+            # Blank keeps the stored secret: it is never echoed back into the page.
+            "notify_secret": (str(form.get("notify_secret") or "").strip()
+                              or str(settings_store.get("notify_secret", "") or "")),
+            "notify_on_review": flag("notify_on_review"),
+            "notify_on_rating": flag("notify_on_rating"),
+            "notify_on_token_error": flag("notify_on_token_error"),
         }
     )
     scheduler.apply_settings()
     return _redirect("/settings#behaviour", "Settings saved", "ok")
+
+
+@router.post("/settings/sonarr")
+async def save_sonarr(
+    _: None = Depends(require_session), sonarr_url: str = Form(""), sonarr_api_key: str = Form(""),
+    action: str = Form("save"),
+):
+    """Save the Sonarr URL and key after checking them, then read the series list."""
+    from app import sonarr
+
+    if action == "remove":
+        settings_store.set_many({"sonarr_url": "", "sonarr_api_key": "", "sonarr_last_error": ""})
+        db.execute("DELETE FROM sonarr_series")
+        return _redirect("/settings#sonarr", "Sonarr removed. Matching no longer uses it.", "ok")
+
+    url = sonarr_url.strip().rstrip("/")
+    key = sonarr_api_key.strip() or str(settings_store.get("sonarr_api_key", "") or "")
+    if not url:
+        return _redirect("/settings#sonarr", "Enter Sonarr's address, e.g. http://192.168.1.10:8989.", "error")
+    if urlparse(url).scheme not in ("http", "https") or not key:
+        return _redirect("/settings#sonarr", "Sonarr needs an http(s) address and its API key.", "error")
+    try:
+        version = await sonarr.check(url, key)
+    except sonarr.SonarrError as exc:
+        return _redirect("/settings#sonarr", f"Not saved: {exc}.", "error")
+    settings_store.set_many({"sonarr_url": url, "sonarr_api_key": key})
+    try:
+        count = await sonarr.refresh()
+    except sonarr.SonarrError as exc:
+        settings_store.set("sonarr_last_error", str(exc))
+        return _redirect("/settings#sonarr", f"Saved, but the series list could not be read: {exc}.", "error")
+    return _redirect("/settings#sonarr", f"Connected to Sonarr {version}: {count} series.", "ok")
+
+
+@router.post("/actions/refresh-sonarr")
+async def action_refresh_sonarr(_: None = Depends(require_session)):
+    from app import sonarr
+
+    try:
+        count = await sonarr.refresh()
+    except sonarr.SonarrError as exc:
+        settings_store.set("sonarr_last_error", str(exc))
+        return _redirect("/system#sonarr", f"Sonarr refresh failed: {exc}.", "error")
+    return _redirect("/system#sonarr", f"Read {count} series from Sonarr.", "ok")
+
+
+@router.post("/settings/api-token", response_class=HTMLResponse)
+async def api_token(request: Request, _: None = Depends(require_session), action: str = Form("generate")):
+    """Generate (or replace) or revoke the agent API token.
+
+    The new token is shown once, in this response, and never put in a URL or
+    stored: only its hash is kept.
+    """
+    if action == "revoke":
+        auth.revoke_api_token()
+        return _redirect("/settings#agent", "API token revoked. Agents can no longer use the API.", "ok")
+    token = auth.issue_api_token()
+    response = await _render_settings(request, new_api_token=token)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@router.post("/settings/notify-test")
+async def notify_test(request: Request, _: None = Depends(require_session)):
+    """Send a test to the URL in the form, saved or not. Saving is separate."""
+    from app import notify
+
+    form = await request.form()
+    ok, message = await notify.send_test(
+        url=str(form.get("notify_webhook_url", "") or "").strip() or None,
+        service_name=str(form.get("notify_service", "") or "") or None,
+        secret=str(form.get("notify_secret", "") or "").strip() or None,
+    )
+    return _redirect("/settings#notifications", message, "ok" if ok else "error")
 
 
 @router.post("/settings/password")

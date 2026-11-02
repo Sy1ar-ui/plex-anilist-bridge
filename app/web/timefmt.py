@@ -84,8 +84,17 @@ def day(value: str | date | None) -> str:
     return f"{value.day} {value.strftime('%b %Y')}"
 
 
+def from_unix(value) -> datetime | None:
+    try:
+        seconds = int(value)
+    except (TypeError, ValueError):
+        return None
+    return datetime.fromtimestamp(seconds, UTC) if seconds > 0 else None
+
+
 def register(env) -> None:
     env.filters["ago"] = time_tag
     env.filters["relative"] = relative
     env.filters["exact_time"] = exact
     env.filters["day"] = day
+    env.filters["timestamp"] = from_unix
