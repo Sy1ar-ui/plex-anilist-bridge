@@ -438,6 +438,10 @@ git tag -a v0.4.0 -m "Release 0.4.0" && git push origin v0.4.0
 ```
 
 The tag push is what publishes `ghcr.io/sy1ar-ui/plex-anilist-bridge:0.4.0`.
+The image workflow first runs `scripts/check_release_tag.py`, which fails the
+build unless the tag is exactly `v` plus the version in `app/config.py`, so a
+mistyped tag or one on the wrong commit fails instead of publishing. Run it
+yourself before pushing a tag: `python3 scripts/check_release_tag.py v0.4.0`.
 Until it is pushed, the compose file and template on `main` name a tag that
 does not exist yet.
 
