@@ -1,5 +1,9 @@
 # plex-anilist-bridge
 
+[![CI](https://github.com/Sy1ar-ui/plex-anilist-bridge/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Sy1ar-ui/plex-anilist-bridge/actions/workflows/ci.yml)
+[![Image](https://github.com/Sy1ar-ui/plex-anilist-bridge/actions/workflows/docker.yml/badge.svg?branch=main)](https://github.com/Sy1ar-ui/plex-anilist-bridge/actions/workflows/docker.yml)
+[![Licence: GPL v3](https://img.shields.io/badge/licence-GPL--3.0--or--later-blue.svg)](LICENSE)
+
 Syncs your Plex watch activity to AniList, and mirrors AniList to MyAnimeList,
 from one container. AniList is the source of truth; the MAL sync is one-way;
 nothing is ever written back to Plex.
