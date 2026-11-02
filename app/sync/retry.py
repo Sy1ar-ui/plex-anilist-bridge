@@ -13,6 +13,9 @@ careful not to make an outage worse:
 Retrying is harmless by construction: every AniList write is absolute, and the
 remote state is re-read before planning, so an event whose write did land
 before a timeout becomes "no change" on retry.
+
+Rated completions (:mod:`app.sync.completion`) that could not reach AniList
+when the user submitted them are retried here too, after the events.
 """
 from __future__ import annotations
 
@@ -25,6 +28,7 @@ from app.anilist.client import AniListAuthError, AniListClient
 from app.anilist.client import health as anilist_health
 from app.plex import client as plex_client
 from app.plex.client import PlexUnavailable
+from app.sync import completion
 from app.sync.pipeline import STATUS_DEFERRED, handle_watch_event
 from app.sync.writegate import WriteGate
 
@@ -42,18 +46,29 @@ class RetryReport:
     recovered: int = 0
     still_deferred: int = 0
     failed: int = 0
+    completions_attempted: int = 0
+    completions_done: int = 0
     outcomes: dict[str, int] = field(default_factory=dict)
     detail: str = ""
 
     def summary(self) -> str:
-        if not self.attempted:
+        if not self.attempted and not self.completions_attempted:
             return self.detail or "nothing to retry"
-        text = (
-            f"retried {self.attempted} deferred event(s): {self.recovered} went through, "
-            f"{self.still_deferred} still waiting"
-        )
-        if self.failed:
-            text += f", {self.failed} failed"
+        parts = []
+        if self.attempted:
+            text = (
+                f"retried {self.attempted} deferred event(s): {self.recovered} went "
+                f"through, {self.still_deferred} still waiting"
+            )
+            if self.failed:
+                text += f", {self.failed} failed"
+            parts.append(text)
+        if self.completions_attempted:
+            parts.append(
+                f"{self.completions_done} of {self.completions_attempted} rated "
+                "completion(s) written"
+            )
+        text = "; ".join(parts)
         if self.detail:
             text += f" ({self.detail})"
         return text
@@ -95,7 +110,8 @@ async def retry_deferred(*, force: bool = False, limit: int = BATCH_SIZE) -> Ret
             return report
 
         event_ids = repo.due_deferred_events(limit=limit, ignore_schedule=force)
-        if not event_ids:
+        completion_ids = completion.due_queued(limit=limit, ignore_schedule=force)
+        if not event_ids and not completion_ids:
             report.detail = "no deferred events are due"
             _record(report)
             return report
@@ -132,6 +148,13 @@ async def retry_deferred(*, force: bool = False, limit: int = BATCH_SIZE) -> Ret
                     report.failed += 1
                 else:
                     report.recovered += 1
+
+            if completion_ids and not blocked_reason():
+                attempted, done = await completion.retry_queued(
+                    anilist=anilist, gate=gate, force=force, limit=limit
+                )
+                report.completions_attempted = attempted
+                report.completions_done = done
         finally:
             await anilist.__aexit__(None, None, None)
 

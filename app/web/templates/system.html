@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% block title %}System &middot; Plex AniList Bridge{% endblock %}
+{% block content %}
+
+{% set state_label = {'ok': 'Healthy', 'degraded': 'Degraded', 'throttled': 'Throttled', 'down': 'Down'} %}
+{% set state_class = {'ok': 'ok', 'degraded': 'warn', 'throttled': 'warn', 'down': 'bad'} %}
+
+<div class="page-head">
+  <h1>System</h1>
+  <p class="muted">{{ event_total }} event(s) recorded &middot;
+    {{ counters.accepted }} accepted, {{ counters.dropped_other_accounts }} dropped from other accounts,
+    {{ counters.ignored }} ignored, all time</p>
+</div>
+
+<section class="cards">
+
+  <div class="card card-wide" id="anilist">
+    <div class="card-head">
+      <h3>AniList API</h3>
+      <span class="badge badge-{{ state_class[anilist.state] }}">{{ state_label[anilist.state] }}</span>
+    </div>
+    <p>{{ anilist.summary }}</p>
+
+    <dl class="facts">
+      <dt>Rate limit</dt>
+      <dd>
+        {{ anilist.limit_per_minute }}/min
+        {% if anilist.limit_reduced %}
+          <span class="tag tag-held" title="AniList's normal limit is {{ anilist.normal_limit_per_minute }}/min">reduced from {{ anilist.normal_limit_per_minute }}</span>
+        {% endif %}
+        {% if anilist.remaining is not none %}<span class="muted">&middot; {{ anilist.remaining }} left this minute</span>{% endif %}
+      </dd>
+
+      <dt>Last success</dt>
+      <dd>{{ anilist.last_success_at|ago }}
+        {% if anilist.throttles_last_10_min %}<span class="muted">&middot; {{ anilist.throttles_last_10_min }} &times; 429 in the last 10 min</span>{% endif %}</dd>
+
+      {% if anilist.down_since %}
+      <dt>Down since</dt>
+      <dd>{{ anilist.down_since|ago }}</dd>
+      {% endif %}
+
+      {% if anilist.retry_at %}
+      <dt>Next attempt</dt>
+      <dd>{{ anilist.retry_at|ago }}</dd>
+      {% endif %}
+
+      {% if anilist.last_error and anilist.state != 'ok' %}
+      <dt>Last error</dt>
+      <dd class="bad-text">{{ anilist.last_error }}</dd>
+      {% endif %}
+
+      <dt>Waiting</dt>
+      <dd>
+        {% if anilist.deferred or anilist.queued_ratings %}
+          {% if anilist.deferred %}<a href="/activity?status=deferred">{{ anilist.deferred }} deferred event(s)</a>{% endif %}
+          {% if anilist.queued_ratings %}{% if anilist.deferred %} &middot; {% endif %}<a href="/#rate">{{ anilist.queued_ratings }} rating(s)</a>{% endif %}
+          {% if anilist.next_retry %}<span class="muted">&middot; next due {{ anilist.next_retry|ago }}</span>{% endif %}
+          {% if anilist.retry_running %}<span class="tag tag-would_write">retrying now</span>{% endif %}
+        {% else %}
+          <span class="muted">nothing</span>
+        {% endif %}
+      </dd>
+
+      {% if last_retry_summary %}
+      <dt>Last retry run</dt>
+      <dd><span class="muted">{{ last_retry|ago }}:</span> {{ last_retry_summary }}</dd>
+      {% endif %}
+    </dl>
+
+    <div class="button-row">
+      <form method="post" action="/actions/check-anilist">
+        <button class="secondary" title="Make one request now, even if the bridge thinks AniList is down">Check AniList now</button>
+      </form>
+      {% if anilist.deferred or anilist.queued_ratings %}
+      <form method="post" action="/actions/retry-deferred">
+        <input type="hidden" name="back" value="/system#anilist">
+        <button {% if anilist.retry_running or anilist.retry_blocked %}disabled{% endif %}
+                {% if anilist.retry_blocked %}title="Not now: {{ anilist.retry_blocked }}"{% endif %}>Retry deferred now</button>
+      </form>
+      {% endif %}
+    </div>
+    <p class="muted small">
+      While AniList is down or throttling hard, events are deferred, not failed,
+      and retried automatically.
+    </p>
+  </div>
+
+  <div class="card" id="connections">
+    <h3>Connections</h3>
+    <dl class="facts">
+      <dt>Plex</dt>
+      <dd>
+        {% if plex_configured %}
+          <span class="ok">connected</span> <span class="muted small">{{ plex_base_url }}</span>
+        {% else %}<a href="/settings#plex" class="bad">not configured</a>{% endif %}
+      </dd>
+      <dt>Account</dt>
+      <dd>
+        {% if plex_account %}{{ plex_account.name }}
+        {% else %}<a href="/settings#account" class="bad">none chosen &mdash; every event is dropped</a>{% endif %}
+      </dd>
+      <dt>Libraries</dt>
+      <dd>{{ enabled_libraries|map(attribute='title')|join(', ') or 'none' }}</dd>
+      {% for provider, record in token_status.items() %}
+      <dt>{{ 'AniList' if provider == 'anilist' else 'MyAnimeList' if provider == 'mal' else provider }}</dt>
+      <dd>
+        {% if record.status == 'ok' %}
+          <span class="ok">ok</span>{% if record.account_name %} <span class="muted">as {{ record.account_name }}</span>{% endif %}
+        {% elif record.status == 'broken' %}<a href="/settings#anilist" class="bad">rejected</a>
+        {% elif record.status == 'expiring' %}<span class="warn">expiring</span>
+        {% else %}<span class="muted">not connected</span>{% endif %}
+        {% if record.last_error %}<br><span class="bad-text small">{{ record.last_error }}</span>{% endif %}
+      </dd>
+      {% endfor %}
+    </dl>
+  </div>
+
+  <div class="card" id="datasets">
+    <h3>Mapping datasets</h3>
+    {% if datasets %}
+    <dl class="facts">
+      {% for ds in datasets %}
+      <dt>{{ ds.name }}</dt>
+      <dd>
+        {% if ds.status == 'ok' %}<span class="ok">ok</span>
+        {% elif ds.status == 'stale' %}<span class="warn">stale cache</span>
+        {% else %}<span class="bad">{{ ds.status }}</span>{% endif %}
+        <span class="muted small">{{ ds.row_count }} rows &middot; {{ ds.fetched_at|ago }}</span>
+        {% if ds.last_error %}<br><span class="bad-text small">{{ ds.last_error }}</span>{% endif %}
+      </dd>
+      {% endfor %}
+    </dl>
+    {% else %}
+      <p class="muted">Not loaded yet.</p>
+    {% endif %}
+    <form method="post" action="/actions/refresh-datasets">
+      <button class="secondary">Refresh now</button>
+    </form>
+  </div>
+
+  <div class="card" id="jobs">
+    <h3>Scheduled jobs</h3>
+    {% if jobs %}
+    <dl class="facts facts-right">
+      {% for job in jobs %}
+      <dt>{{ job.name }}</dt>
+      <dd>{{ job.next_run|ago if job.next_run else 'not scheduled' }}</dd>
+      {% endfor %}
+    </dl>
+    {% else %}
+      <p class="muted">Scheduler not running.</p>
+    {% endif %}
+    <p class="small">Last reconcile {{ last_reconcile|ago }}
+      {% if last_reconcile_summary %}<br><span class="muted">{{ last_reconcile_summary }}</span>{% endif %}</p>
+    <form method="post" action="/actions/reconcile">
+      <button class="secondary">Reconcile Plex history now</button>
+    </form>
+  </div>
+</section>
+
+<section class="panel" id="webhook">
+  <div class="card-head">
+    <h2>Plex webhook</h2>
+    <span class="muted small">last received {{ last_webhook|ago }}</span>
+  </div>
+  <p>In Plex, open <em>Settings &rarr; Webhooks &rarr; Add Webhook</em> and paste this URL.</p>
+  {% include "_copy.html" %}
+  <p class="muted small">
+    The random part of the path is the credential, because Plex cannot send an
+    authentication header. Treat it like a password. Opening it in a browser
+    shows a small status page.
+  </p>
+</section>
+
+{% endblock %}

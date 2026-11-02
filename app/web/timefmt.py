@@ -7,7 +7,7 @@ the exact UTC time kept in the element's title, so nothing is lost.
 """
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from markupsafe import Markup, escape
 
@@ -70,7 +70,22 @@ def time_tag(value: str | datetime | None) -> Markup:
     )
 
 
+def day(value: str | date | None) -> str:
+    """A calendar date as "2 Nov 2026". Dates are already local; no zone shift."""
+    if not value:
+        return ""
+    if isinstance(value, datetime):
+        value = value.date()
+    if not isinstance(value, date):
+        try:
+            value = date.fromisoformat(str(value)[:10])
+        except ValueError:
+            return str(value)
+    return f"{value.day} {value.strftime('%b %Y')}"
+
+
 def register(env) -> None:
     env.filters["ago"] = time_tag
     env.filters["relative"] = relative
     env.filters["exact_time"] = exact
+    env.filters["day"] = day

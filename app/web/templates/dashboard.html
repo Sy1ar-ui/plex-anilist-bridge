@@ -5,11 +5,6 @@
 {% set state_label = {'ok': 'Healthy', 'degraded': 'Degraded', 'throttled': 'Throttled', 'down': 'Down'} %}
 {% set state_class = {'ok': 'ok', 'degraded': 'warn', 'throttled': 'warn', 'down': 'bad'} %}
 
-<div class="page-head">
-  <h1>Dashboard</h1>
-  <p class="muted">{{ event_total }} event(s) recorded &middot; last webhook {{ last_webhook|ago }}</p>
-</div>
-
 {% if setup_remaining %}
 <section class="panel setup">
   <h2>Finish setting up <span class="muted small">{{ setup_steps|length - setup_remaining }} of {{ setup_steps|length }} done</span></h2>
@@ -22,6 +17,62 @@
     </li>
     {% endfor %}
   </ol>
+  {% if not last_webhook %}
+  <div id="setup-webhook" class="setup-webhook">
+    <p>In Plex, open <em>Settings &rarr; Webhooks &rarr; Add Webhook</em> and paste this URL.
+       It contains a secret, so treat it like a password.</p>
+    {% include "_copy.html" %}
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if ratings %}
+<section class="panel rate" id="rate">
+  <div class="card-head">
+    <h2>Ready to rate</h2>
+    <span class="muted small">Completed on AniList once rated, dated the day you finished</span>
+  </div>
+  <ul class="rate-list">
+    {% for item in ratings %}
+    <li class="rate-item">
+      <div class="rate-what">
+        <a class="rate-title" href="https://anilist.co/anime/{{ item.anilist_id }}" target="_blank" rel="noreferrer">{{ item.display_title }}</a>
+        <span class="muted small">
+          {{ item.total_episodes - 1 }}/{{ item.total_episodes }} &middot; finished {{ item.completed_on|day }}
+        </span>
+        {% if item.status == 'queued' %}
+          <span class="small">
+            <span class="tag tag-deferred">{% if item.score is not none %}rated {{ '%g'|format(item.score) }}{% else %}no rating{% endif %}</span>
+            waiting for AniList{% if item.next_attempt_at %}, retry {{ item.next_attempt_at|ago }}{% endif %}
+          </span>
+        {% elif item.last_error %}
+          <span class="bad-text small">{{ item.last_error }}</span>
+        {% endif %}
+      </div>
+      {% if item.status == 'awaiting' %}
+      <form method="post" action="/ratings/{{ item.id }}" class="rate-form">
+        <label class="rate-score">
+          <span class="sr-only">Rating for {{ item.display_title }}, out of 10</span>
+          <input type="number" name="score" min="1" max="10" step="0.5" required
+                 inputmode="decimal" placeholder="&ndash;"
+                 {% if item.score is not none %}value="{{ '%g'|format(item.score) }}"{% endif %}>
+          <span class="muted">/ 10</span>
+        </label>
+        <button name="action" value="rate">Complete</button>
+        <details class="more">
+          <summary aria-label="More options">&hellip;</summary>
+          <div class="more-menu">
+            <button name="action" value="no_rating" class="link" formnovalidate>Complete without rating</button>
+            <button name="action" value="dismiss" class="link" formnovalidate
+                    onclick="return confirm('Stop waiting? Nothing is written and AniList stays at {{ item.total_episodes - 1 }}/{{ item.total_episodes }}.')">Don&rsquo;t complete</button>
+          </div>
+        </details>
+      </form>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
 </section>
 {% endif %}
 
@@ -35,7 +86,7 @@
       {% else %}{{ plex_account.name }}{% endif %}
     </span>
   </a>
-  <a class="status-tile" href="#anilist">
+  <a class="status-tile" href="/system#anilist">
     {% if anilist.token_broken %}
       <span class="dot dot-bad"></span>
       <span class="status-name">AniList</span>
@@ -50,196 +101,16 @@
       <span class="status-value">{{ state_label[anilist.state] }}{% if anilist.deferred %} &middot; {{ anilist.deferred }} deferred{% endif %}</span>
     {% endif %}
   </a>
-  <a class="status-tile" href="#datasets">
+  <a class="status-tile" href="/system#datasets">
     <span class="dot dot-{{ 'ok' if datasets_ok else ('warn' if datasets else 'bad') }}"></span>
     <span class="status-name">Datasets</span>
     <span class="status-value">{% if not datasets %}Not loaded{% elif datasets_ok %}Up to date{% else %}Needs attention{% endif %}</span>
   </a>
-  <a class="status-tile" href="#webhook">
+  <a class="status-tile" href="/system#webhook">
     <span class="dot dot-{{ 'ok' if last_webhook else 'warn' }}"></span>
     <span class="status-name">Webhook</span>
     <span class="status-value">{% if last_webhook %}{{ last_webhook|ago }}{% else %}Nothing received yet{% endif %}</span>
   </a>
-</section>
-
-<section class="cards">
-
-  <div class="card card-wide" id="anilist">
-    <div class="card-head">
-      <h3>AniList API</h3>
-      <span class="badge badge-{{ state_class[anilist.state] }}">{{ state_label[anilist.state] }}</span>
-    </div>
-    <p>{{ anilist.summary }}</p>
-
-    <dl class="facts">
-      <dt>Rate limit</dt>
-      <dd>
-        {{ anilist.limit_per_minute }}/min
-        {% if anilist.limit_reduced %}
-          <span class="tag tag-held" title="AniList's normal limit is {{ anilist.normal_limit_per_minute }}/min">reduced from {{ anilist.normal_limit_per_minute }}</span>
-        {% endif %}
-        {% if anilist.remaining is not none %}<span class="muted">&middot; {{ anilist.remaining }} left this minute</span>{% endif %}
-      </dd>
-
-      <dt>429s, last 10 min</dt>
-      <dd>{{ anilist.throttles_last_10_min }}</dd>
-
-      <dt>Last success</dt>
-      <dd>{{ anilist.last_success_at|ago }}</dd>
-
-      {% if anilist.down_since %}
-      <dt>Down since</dt>
-      <dd>{{ anilist.down_since|ago }}</dd>
-      {% endif %}
-
-      {% if anilist.retry_at %}
-      <dt>Next attempt</dt>
-      <dd>{{ anilist.retry_at|ago }}</dd>
-      {% endif %}
-
-      {% if anilist.last_error and anilist.state != 'ok' %}
-      <dt>Last error</dt>
-      <dd class="bad-text">{{ anilist.last_error }}</dd>
-      {% endif %}
-
-      <dt>Deferred events</dt>
-      <dd>
-        {% if anilist.deferred %}
-          <a href="/activity?status=deferred">{{ anilist.deferred }} waiting</a>
-          {% if anilist.next_retry %}<span class="muted">&middot; next due {{ anilist.next_retry|ago }}</span>{% endif %}
-          {% if anilist.retry_running %}<span class="tag tag-would_write">retrying now</span>{% endif %}
-        {% else %}
-          <span class="muted">none</span>
-        {% endif %}
-      </dd>
-
-      {% if last_retry_summary %}
-      <dt>Last retry run</dt>
-      <dd><span class="muted">{{ last_retry|ago }}:</span> {{ last_retry_summary }}</dd>
-      {% endif %}
-    </dl>
-
-    <div class="button-row">
-      <form method="post" action="/actions/check-anilist">
-        <button class="secondary" title="Make one request now, even if the bridge thinks AniList is down">Check AniList now</button>
-      </form>
-      {% if anilist.deferred %}
-      <form method="post" action="/actions/retry-deferred">
-        <button {% if anilist.retry_running or anilist.retry_blocked %}disabled{% endif %}
-                {% if anilist.retry_blocked %}title="Not now: {{ anilist.retry_blocked }}"{% endif %}>Retry deferred now</button>
-      </form>
-      {% endif %}
-    </div>
-    <p class="muted small">
-      When AniList is down or throttling hard, events are <strong>deferred</strong>
-      instead of failed and retried automatically. Repeated failures pause all
-      AniList requests briefly, so an outage is not hammered. The limit follows
-      AniList's own response headers.
-    </p>
-  </div>
-
-  <div class="card">
-    <h3>Last 24 hours</h3>
-    {% if day_counts %}
-    <ul class="counts">
-      {% for s in ['written', 'would_write', 'no_change', 'deferred', 'held', 'unmatched', 'skipped', 'error'] %}
-        {% if day_counts.get(s) %}
-        <li><a href="/activity?status={{ s }}"><span class="tag tag-{{ s }}">{{ s|replace('_', ' ') }}</span></a>
-            <strong>{{ day_counts[s] }}</strong></li>
-        {% endif %}
-      {% endfor %}
-    </ul>
-    {% else %}
-      <p class="muted">Nothing in the last 24 hours.</p>
-    {% endif %}
-    <p class="muted small">
-      {{ counters.accepted }} accepted &middot;
-      {{ counters.dropped_other_accounts }} dropped (other accounts) &middot;
-      {{ counters.ignored }} ignored, all time
-    </p>
-    {% if pending_review %}
-      <p><a href="/activity?status=held" class="warn">{{ pending_review }} waiting for review &rarr;</a></p>
-    {% endif %}
-  </div>
-
-  <div class="card">
-    <h3>Plex</h3>
-    {% if plex_configured %}
-      <p class="ok">Connected</p>
-      <p class="muted small">{{ plex_base_url }}</p>
-      {% if plex_account %}
-        <p>Watching for <strong>{{ plex_account.name }}</strong>
-           <span class="muted">(account {{ plex_account.id }})</span></p>
-      {% else %}
-        <p class="bad">No account chosen &mdash; every event will be dropped.
-           <a href="/settings#account">Choose one</a>.</p>
-      {% endif %}
-      <p class="muted small">
-        {{ enabled_libraries|length }} library(ies) enabled:
-        {{ enabled_libraries|map(attribute='title')|join(', ') or 'none' }}
-      </p>
-    {% else %}
-      <p class="bad">Not configured</p>
-      <p><a href="/settings#plex">Add your Plex server</a></p>
-    {% endif %}
-  </div>
-
-  <div class="card">
-    <h3>Accounts</h3>
-    {% for provider, record in token_status.items() %}
-    <p>
-      <span class="label">{{ 'AniList' if provider == 'anilist' else 'MyAnimeList' if provider == 'mal' else provider }}</span>
-      {% if record.status == 'ok' %}
-        <span class="ok">ok</span>
-        {% if record.account_name %}<span class="muted">as {{ record.account_name }}</span>{% endif %}
-      {% elif record.status == 'broken' %}
-        <span class="bad">rejected</span>
-      {% elif record.status == 'expiring' %}
-        <span class="warn">expiring</span>
-      {% else %}
-        <span class="muted">not connected</span>
-      {% endif %}
-    </p>
-    {% if record.last_error %}<p class="bad small">{{ record.last_error }}</p>{% endif %}
-    {% endfor %}
-    <p><a href="/settings#anilist">Connect or re-authorise</a></p>
-  </div>
-
-  <div class="card" id="datasets">
-    <h3>Mapping datasets</h3>
-    {% if datasets %}
-      {% for ds in datasets %}
-      <p>
-        <span class="label">{{ ds.name }}</span>
-        {% if ds.status == 'ok' %}<span class="ok">ok</span>
-        {% elif ds.status == 'stale' %}<span class="warn">stale cache</span>
-        {% else %}<span class="bad">{{ ds.status }}</span>{% endif %}
-        <br><span class="muted small">{{ ds.row_count }} rows &middot; fetched {{ ds.fetched_at|ago }}</span>
-      </p>
-      {% if ds.last_error %}<p class="bad small">{{ ds.last_error }}</p>{% endif %}
-      {% endfor %}
-    {% else %}
-      <p class="muted">Not loaded yet.</p>
-    {% endif %}
-    <form method="post" action="/actions/refresh-datasets">
-      <button class="secondary">Refresh now</button>
-    </form>
-  </div>
-
-  <div class="card">
-    <h3>Scheduled jobs</h3>
-    {% for job in jobs %}
-      <p><span class="job-name">{{ job.name }}</span><br>
-         <span class="muted small">next run {{ job.next_run|ago if job.next_run else 'not scheduled' }}</span></p>
-    {% else %}
-      <p class="muted">Scheduler not running.</p>
-    {% endfor %}
-    <p class="small">Last reconcile: {{ last_reconcile|ago }}
-      {% if last_reconcile_summary %}<br><span class="muted">{{ last_reconcile_summary }}</span>{% endif %}</p>
-    <form method="post" action="/actions/reconcile">
-      <button class="secondary">Reconcile Plex history now</button>
-    </form>
-  </div>
 </section>
 
 <section class="panel">
@@ -247,69 +118,32 @@
     <h2>Recent activity</h2>
     <a href="/activity">View all &rarr;</a>
   </div>
+  {% if day_counts %}
+  <nav class="chips" aria-label="Last 24 hours">
+    <span class="muted small">Last 24 h</span>
+    {% for s in ['written', 'would_write', 'awaiting_rating', 'no_change', 'deferred', 'held', 'unmatched', 'skipped', 'error'] %}
+      {% if day_counts.get(s) %}
+      <a href="/activity?status={{ s }}" class="chip chip-{{ s }}">{{ s|replace('_', ' ') }} <span>{{ day_counts[s] }}</span></a>
+      {% endif %}
+    {% endfor %}
+  </nav>
+  {% endif %}
   {% if recent %}
   <table class="log compact">
-    <thead><tr><th>When</th><th>Item</th><th>Outcome</th><th></th></tr></thead>
     <tbody>
     {% for e in recent %}
     <tr class="row-{{ e.status }}">
       <td class="nowrap muted small">{{ (e.viewed_at or e.received_at)|ago }}</td>
       <td><strong>{{ e.show_title or 'unknown' }}</strong>
         {% if e.media_kind == 'episode' %}<span class="muted">S{{ '%02d' % (e.season or 0) }}E{{ '%02d' % (e.episode or 0) }}</span>{% endif %}</td>
-      <td><span class="tag tag-{{ e.status }}">{{ e.status|replace('_', ' ') }}</span></td>
-      <td class="nowrap"><a href="/activity/{{ e.id }}">why?</a></td>
+      <td class="nowrap"><a href="/activity/{{ e.id }}" class="tag tag-{{ e.status }}" title="Why?">{{ e.status|replace('_', ' ') }}</a></td>
     </tr>
     {% endfor %}
     </tbody>
   </table>
   {% else %}
-  <p class="muted">No events yet. Watch something on the configured account, or run a reconcile.</p>
+  <p class="muted">No events yet. Watch something on the configured account, or run a reconcile from <a href="/system#jobs">System</a>.</p>
   {% endif %}
 </section>
-
-<section class="panel" id="webhook">
-  <h2>Plex webhook</h2>
-  <p>In Plex: <em>Settings &rarr; Webhooks &rarr; Add Webhook</em>, and paste this URL.</p>
-  <div class="copy-row">
-    <pre class="copyable" id="webhook-url">{{ webhook_url }}</pre>
-    <button type="button" class="secondary" data-copy="webhook-url">Copy</button>
-  </div>
-  <p class="muted small">
-    The random part of the path is the secret: Plex cannot send an
-    authentication header with a webhook, so the URL itself has to be the
-    credential. Treat it like a password. Opening it in a browser returns a
-    small status page, which is a quick way to prove the path reaches the
-    container.
-  </p>
-</section>
-
-<script>
-  // Copy-to-clipboard. The Clipboard API needs HTTPS or localhost, which a LAN
-  // install usually is not, so fall back to selecting the text for Ctrl+C.
-  document.querySelectorAll('[data-copy]').forEach(function (button) {
-    button.addEventListener('click', function () {
-      var source = document.getElementById(button.dataset.copy);
-      var text = source.textContent.trim();
-      function selectIt() {
-        var range = document.createRange();
-        range.selectNodeContents(source);
-        var selection = window.getSelection();
-        selection.removeAllRanges();
-        selection.addRange(range);
-        var copied = false;
-        try { copied = document.execCommand('copy'); } catch (e) {}
-        button.textContent = copied ? 'Copied' : 'Press Ctrl+C';
-      }
-      if (navigator.clipboard && window.isSecureContext) {
-        navigator.clipboard.writeText(text).then(function () {
-          button.textContent = 'Copied';
-        }, selectIt);
-      } else {
-        selectIt();
-      }
-      setTimeout(function () { button.textContent = 'Copy'; }, 2500);
-    });
-  });
-</script>
 
 {% endblock %}

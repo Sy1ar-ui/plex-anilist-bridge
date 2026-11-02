@@ -7,12 +7,6 @@
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
-{% if dry_run %}
-<div class="banner banner-dry">
-  <strong>Dry run is on.</strong> Nothing is written to AniList or MyAnimeList.
-  Every event shows what <em>would</em> have been written.
-</div>
-{% endif %}
 {% if not password_set %}
 <div class="banner banner-warn">
   <strong>No admin password is set.</strong> Anyone who can reach this page can
@@ -32,30 +26,41 @@
   {% if anilist.deferred %}{{ anilist.deferred }} event(s) deferred &mdash; nothing is lost, they are retried automatically.
   {% else %}New events will be deferred and retried automatically.{% endif %}
   {% if anilist.retry_at %}Requests are paused; they resume {{ anilist.retry_at|ago }}.{% endif %}
-  <a href="/#anilist">Details</a>
+  <a href="/system#anilist">Details</a>
 </div>
 {% elif anilist.state == 'throttled' %}
 <div class="banner banner-warn" role="status">
   <strong>AniList is rate limiting this client.</strong>
   Requests resume {{ anilist.retry_at|ago if anilist.retry_at else 'shortly' }}{% if anilist.deferred %};
   {{ anilist.deferred }} event(s) are deferred until then{% endif %}.
-  <a href="/#anilist">Details</a>
+  <a href="/system#anilist">Details</a>
 </div>
 {% endif %}
 
+{% set here = request.url.path %}
 <header class="topbar">
-  <div class="brand"><a href="/">Plex &rarr; AniList Bridge</a></div>
+  <div class="brand"><a href="/">Plex &rarr; AniList</a></div>
+  {% if dry_run %}
+  <a href="/settings#behaviour" class="pill pill-dry"
+     title="Dry run is on: nothing is written to AniList or MyAnimeList. Every event shows what would have been written.">Dry run</a>
+  {% endif %}
   <nav>
-    <a href="/" {% if request.url.path == '/' %}class="here" aria-current="page"{% endif %}>Dashboard</a>
-    <a href="/activity" {% if request.url.path.startswith('/activity') %}class="here" aria-current="page"{% endif %}>Activity</a>
-    <a href="/settings" {% if request.url.path == '/settings' %}class="here" aria-current="page"{% endif %}>Settings</a>
-    {% if anilist.deferred %}
-    <a href="/activity?status=deferred" class="pill pill-info" title="Waiting for AniList">{{ anilist.deferred }} deferred</a>
+    <a href="/" {% if here == '/' %}class="here" aria-current="page"{% endif %}>Dashboard</a>
+    <a href="/activity" {% if here.startswith('/activity') %}class="here" aria-current="page"{% endif %}>Activity</a>
+    <a href="/system" {% if here == '/system' %}class="here" aria-current="page"{% endif %}>System</a>
+    <a href="/settings" {% if here == '/settings' %}class="here" aria-current="page"{% endif %}>Settings</a>
+  </nav>
+  <div class="topbar-pills">
+    {% if to_rate %}
+    <a href="/#rate" class="pill pill-accent" title="Finished series waiting for your rating">{{ to_rate }} to rate</a>
     {% endif %}
     {% if pending_review %}
     <a href="/activity?status=held" class="pill" title="Held or unmatched">{{ pending_review }} to review</a>
     {% endif %}
-  </nav>
+    {% if anilist.deferred %}
+    <a href="/activity?status=deferred" class="pill pill-info" title="Waiting for AniList">{{ anilist.deferred }} deferred</a>
+    {% endif %}
+  </div>
   {% if password_set %}
   <form method="post" action="/logout" class="inline"><button class="link">Sign out</button></form>
   {% endif %}
@@ -72,5 +77,21 @@
   <span>GPL-3.0 &middot; mapping logic partly derived from
     <a href="https://github.com/RickDB/PlexAniSync">PlexAniSync</a></span>
 </footer>
+<script>
+  // A link to #something inside a closed <details> opens it.
+  (function () {
+    function reveal() {
+      var id = decodeURIComponent(location.hash.slice(1));
+      var target = id && document.getElementById(id);
+      for (var node = target; node; node = node.parentElement) {
+        if (node.tagName === 'DETAILS') node.open = true;
+      }
+      if (target) target.scrollIntoView();
+    }
+    window.addEventListener('hashchange', reveal);
+    if (location.hash) reveal();
+  })();
+</script>
+{% block scripts %}{% endblock %}
 </body>
 </html>

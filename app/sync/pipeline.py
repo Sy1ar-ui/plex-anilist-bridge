@@ -10,6 +10,11 @@ Order matters here and is load-bearing:
 5. planning, which is where never-decrease lives;
 6. the write gate, which is where dry-run lives.
 
+Finishing a series can be held for a rating (``rate_before_complete``): the
+final episode is written as one short of the total, the event ends as
+``awaiting_rating``, and :mod:`app.sync.completion` writes the completion,
+dated the day the final episode was watched, once the user rates it.
+
 If AniList is down, throttling hard, or the token needs re-authorising, the
 event is **deferred** rather than failed: it keeps its place, and the retry
 job (:mod:`app.sync.retry`) runs it through this same function again once
@@ -21,7 +26,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from app import repo, settings_store
 from app.anilist.client import (
@@ -35,6 +40,7 @@ from app.mapping import engine
 from app.mapping.titles import clean_title, season_variants, title_candidates
 from app.models import Candidate, MatchResult, TraceStep, WatchEvent
 from app.plex.client import PlexClient, PlexUnavailable
+from app.sync import completion
 from app.sync.writegate import RESULT_DEFERRED, WriteGate
 
 log = logging.getLogger(__name__)
@@ -48,6 +54,7 @@ STATUS_UNMATCHED = "unmatched"
 STATUS_SKIPPED = "skipped"
 STATUS_ERROR = "error"
 STATUS_DUPLICATE = "duplicate"
+STATUS_AWAITING_RATING = "awaiting_rating"
 STATUS_DEFERRED = repo.STATUS_DEFERRED
 
 # Deferred events back off per event: 5 min, 10, 20, 40, then hourly.
@@ -61,6 +68,7 @@ _TERMINAL = {
     STATUS_HELD,
     STATUS_UNMATCHED,
     STATUS_SKIPPED,
+    STATUS_AWAITING_RATING,
 }
 
 
@@ -71,6 +79,19 @@ class EventResult:
     detail: str
     is_new: bool = True
     match: MatchResult | None = None
+
+
+def watched_on(event: WatchEvent) -> date:
+    """The local calendar day the item was watched.
+
+    Used for AniList's start and completion dates, so an event processed late
+    (deferred through an outage, found by the reconcile sweep, or held for a
+    rating) is still dated the day it was watched. Local time follows ``TZ``.
+    """
+    moment = event.viewed_at or event.received_at
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    return moment.astimezone().date()
 
 
 def retry_delay(attempts: int) -> timedelta:
@@ -250,6 +271,8 @@ async def handle_watch_event(
             add_untracked=bool(settings.get("add_untracked", True)),
             rewatch_action=str(settings.get("rewatch_action", "ignore")),
             set_dates=bool(settings.get("set_dates", True)),
+            today=watched_on(event),
+            hold_completion_for_rating=bool(settings.get("rate_before_complete", True)),
         ),
     )
 
@@ -261,6 +284,26 @@ async def handle_watch_event(
             anilist_id=candidate.anilist_id,
             entry_episode=candidate.entry_episode,
         )
+    def await_rating(detail: str) -> EventResult:
+        total = int(state.total_episodes or candidate.entry_episode)
+        completion.record_pending(
+            anilist_id=candidate.anilist_id,
+            event_id=stored.id,
+            title=state.title or candidate.title or event.show.title,
+            total_episodes=total,
+            completed_on=watched_on(event),
+        )
+        return finish(
+            STATUS_AWAITING_RATING,
+            detail,
+            match,
+            anilist_id=candidate.anilist_id,
+            entry_episode=candidate.entry_episode,
+        )
+
+    if plan.awaiting_rating and plan.diff is None:
+        return await_rating(plan.reason)
+
     if plan.action == "no_change" or plan.diff is None:
         return finish(
             STATUS_NO_CHANGE,
@@ -287,6 +330,12 @@ async def handle_watch_event(
             anilist_id=candidate.anilist_id,
             entry_episode=candidate.entry_episode,
         )
+
+    if plan.awaiting_rating:
+        detail = f"{outcome.detail} ({plan.reason})"
+        if match.confidence == "uncertain":
+            detail = f"flagged as uncertain but applied: {detail}"
+        return await_rating(detail)
 
     status = STATUS_WOULD_WRITE if outcome.dry_run else STATUS_WRITTEN
     detail = f"{outcome.detail} ({plan.reason})"

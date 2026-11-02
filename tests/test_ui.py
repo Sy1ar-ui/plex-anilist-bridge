@@ -62,8 +62,23 @@ def test_the_dashboard_renders_on_a_fresh_install(ui):
     page = ui.get("/")
     assert page.status_code == 200
     assert "Finish setting up" in page.text
-    assert "AniList API" in page.text
     assert "Recent activity" in page.text
+    # Until a webhook arrives, setup shows the URL to paste into Plex.
+    assert "/webhook/plex/" in page.text
+    # The machinery lives on the System page, not here.
+    assert "AniList API" not in page.text
+
+
+def test_the_system_page_holds_the_machinery(ui):
+    page = ui.get("/system")
+    assert page.status_code == 200
+    for text in ("AniList API", "Mapping datasets", "Scheduled jobs", "/webhook/plex/"):
+        assert text in page.text, text
+
+
+def test_dry_run_is_shown_on_every_page(ui):
+    for path in ("/", "/activity", "/system", "/settings"):
+        assert "pill-dry" in ui.get(path).text, path
 
 
 def test_settings_render_with_the_outage_options(ui):
@@ -200,3 +215,97 @@ def test_status_counts_cover_a_recent_window(datasets, settings):
     assert repo.status_counts().get("deferred") == 1
     db.execute("UPDATE event SET received_at = '2000-01-01T00:00:00+00:00'")
     assert repo.status_counts(since_hours=24) == {}
+
+
+# --------------------------------------------------------------------------
+# rating a finished series
+# --------------------------------------------------------------------------
+def finished_series() -> int:
+    """Watch the finale of a 13-episode series; returns the pending id."""
+    from app.sync import completion
+
+    state = AniListEntryState(
+        anilist_id=290, exists=True, status="CURRENT", progress=12,
+        total_episodes=13, media_status="FINISHED", title="Crest of the Stars",
+    )
+    result = asyncio.run(
+        handle_watch_event(
+            make_event(
+                tvdb_id=72025, season=1, episode=13,
+                viewed_at=datetime(2026, 11, 2, 12, 0, tzinfo=UTC),
+            ),
+            anilist=FakeAniList(state),
+            gate=WriteGate(dry_run=True),
+        )
+    )
+    assert result.status == "awaiting_rating"
+    [pending] = completion.list_open()
+    return pending["id"]
+
+
+def test_a_finished_series_waits_on_the_dashboard(ui):
+    pending_id = finished_series()
+    page = ui.get("/")
+    assert "Ready to rate" in page.text
+    assert "Crest of the Stars" in page.text
+    assert "12/13" in page.text
+    assert "finished 2 Nov 2026" in page.text
+    assert f'action="/ratings/{pending_id}"' in page.text
+    assert "1 to rate" in page.text
+
+
+def test_the_event_page_points_at_the_rating(ui):
+    finished_series()
+    event = db.query_one("SELECT id FROM event WHERE status = 'awaiting_rating'")
+    page = ui.get(f"/activity/{event['id']}")
+    assert "until you rate it" in page.text
+    assert "2 Nov 2026" in page.text
+
+
+def test_a_rating_is_kept_while_anilist_is_not_connected(ui):
+    from app.sync import completion
+
+    pending_id = finished_series()
+    response = ui.post(
+        f"/ratings/{pending_id}", data={"action": "rate", "score": "8.5"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert "Rating+saved" in response.headers["location"]
+    item = completion.get(pending_id)
+    assert item["status"] == "queued"
+    assert item["score"] == 8.5
+    assert "waiting for AniList" in ui.get("/").text
+
+
+def test_a_bad_rating_is_refused(ui):
+    from app.sync import completion
+
+    pending_id = finished_series()
+    response = ui.post(
+        f"/ratings/{pending_id}", data={"action": "rate", "score": "11"},
+        follow_redirects=False,
+    )
+    assert "level=error" in response.headers["location"]
+    assert completion.get(pending_id)["status"] == "awaiting"
+
+
+def test_dont_complete_removes_it_from_the_dashboard(ui):
+    pending_id = finished_series()
+    ui.post(f"/ratings/{pending_id}", data={"action": "dismiss"}, follow_redirects=False)
+    assert "Ready to rate" not in ui.get("/").text
+
+
+def test_the_rating_setting_saves(ui):
+    ui.post("/settings/behaviour", data={"dry_run": "on"}, follow_redirects=False)
+    assert settings_store.get("rate_before_complete") is False
+    ui.post(
+        "/settings/behaviour", data={"dry_run": "on", "rate_before_complete": "on"},
+        follow_redirects=False,
+    )
+    assert settings_store.get("rate_before_complete") is True
+
+
+def test_calendar_dates_read_naturally():
+    assert timefmt.day("2026-11-02") == "2 Nov 2026"
+    assert timefmt.day(None) == ""

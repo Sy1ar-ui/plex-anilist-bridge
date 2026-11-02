@@ -17,8 +17,16 @@ Two things make this safe and are deliberate:
 * **Writes are absolute.** The plan always carries ``progress = N``, never an
   increment, so replaying the same event cannot double-count. Idempotency is a
   property of the write, not of bookkeeping.
-* **Scores and notes are never in the payload.** Not "set to the same value" --
-  absent. There is a test that asserts this on the serialised variables.
+* **Automatic writes never carry a score or notes.** Not "set to the same
+  value" -- absent. There is a test that asserts this on the serialised
+  variables. The one exception is :func:`plan_rated_completion`, which is only
+  ever reached from a rating the user typed into the UI.
+
+Finishing a series can be held for a rating: with
+``hold_completion_for_rating`` on, the episode that would complete a title is
+written as ``total - 1`` and the plan says ``awaiting_rating``. The caller
+records that, and the completion (with the date the final episode was watched)
+is written later by :func:`plan_rated_completion`.
 """
 from __future__ import annotations
 
@@ -46,7 +54,10 @@ class RuleSettings:
     add_untracked: bool = True
     rewatch_action: str = "ignore"       # ignore | repeating
     set_dates: bool = True
+    # The date the episode was watched; used for startedAt / completedAt.
     today: date = field(default_factory=date.today)
+    # Hold a completion one episode short until the user rates the title.
+    hold_completion_for_rating: bool = False
 
 
 @dataclass
@@ -54,6 +65,8 @@ class Plan:
     action: Action
     reason: str
     diff: WriteDiff | None = None
+    # The final episode was watched, but completing is waiting for a rating.
+    awaiting_rating: bool = False
 
     @property
     def writes(self) -> bool:
@@ -100,6 +113,8 @@ def plan_anilist_write(
                 "titles is turned off",
             )
         completed = _reaches_end(state, entry_episode)
+        if completed and settings.hold_completion_for_rating:
+            return _hold_for_rating(state, before, settings)
         status = STATUS_COMPLETED if completed else STATUS_CURRENT
         variables: dict[str, Any] = {
             "mediaId": state.anilist_id,
@@ -171,6 +186,8 @@ def plan_anilist_write(
 
     # ---- a normal progress increase -------------------------------------
     completed = _reaches_end(state, entry_episode)
+    if completed and settings.hold_completion_for_rating:
+        return _hold_for_rating(state, before, settings)
     if completed:
         status = STATUS_COMPLETED
     elif state.status in _RESUMABLE:
@@ -198,6 +215,106 @@ def plan_anilist_write(
         )
     reason = ", ".join(bits)
     return Plan("write", reason, _make_diff(state, variables, before, reason))
+
+
+def _hold_for_rating(
+    state: AniListEntryState, before: dict[str, Any], settings: RuleSettings
+) -> Plan:
+    """The final episode was watched: write everything but the last episode.
+
+    Progress stays one short of the total, so the entry reads "11/12" on
+    AniList until the user rates it. Never lowers progress that is already
+    there.
+    """
+    total = int(state.total_episodes or 0)
+    held = max(total - 1, state.progress)
+    if state.status in _RESUMABLE:
+        status = STATUS_CURRENT
+    else:
+        status = state.status or STATUS_CURRENT
+
+    waiting = (
+        f"final episode {total} watched; holding at {held}/{total} until you rate it"
+    )
+    if state.exists and held == state.progress and status == state.status:
+        return Plan("no_change", waiting, awaiting_rating=True)
+
+    variables: dict[str, Any] = {
+        "mediaId": state.anilist_id,
+        "status": status,
+        "progress": held,
+    }
+    if settings.set_dates and not state.started_at and not state.progress:
+        variables["startedAt"] = _fuzzy(settings.today)
+
+    bits = [f"progress {state.progress} -> {held}"] if held != state.progress else []
+    if status != state.status:
+        bits.append(f"status {state.status or 'none'} -> {status}")
+    reason = ", ".join([*bits, waiting])
+    return Plan(
+        "write", reason, _make_diff(state, variables, before, reason), awaiting_rating=True
+    )
+
+
+def score_to_raw(score: float) -> int:
+    """A 0-10 rating as AniList's 100-point ``scoreRaw``.
+
+    ``scoreRaw`` is independent of the user's chosen score format, so 7.5 is
+    stored as 75 and AniList shows it as 7.5, 75, 4 stars or a smiley as the
+    user has set.
+    """
+    if not 0 < score <= 10:
+        raise ValueError("a rating must be above 0 and at most 10")
+    return round(score * 10)
+
+
+def plan_rated_completion(
+    state: AniListEntryState,
+    *,
+    total_episodes: int,
+    completed_on: date,
+    score: float | None,
+    set_dates: bool = True,
+) -> Plan:
+    """Complete a title the user has just rated (or chose not to rate).
+
+    The only plan that may carry a score, and it is only reached from the
+    rating form. ``completed_on`` is the date the final episode was watched,
+    not the date of the rating. An existing completion date is kept.
+    """
+    before = state.snapshot()
+    total = int(state.total_episodes or total_episodes)
+    progress = max(total, state.progress)
+
+    variables: dict[str, Any] = {
+        "mediaId": state.anilist_id,
+        "status": STATUS_COMPLETED,
+        "progress": progress,
+    }
+    if score is not None:
+        variables["scoreRaw"] = score_to_raw(score)
+    if set_dates and not state.completed_at:
+        variables["completedAt"] = _fuzzy(completed_on)
+
+    if (
+        state.status == STATUS_COMPLETED
+        and state.progress >= total
+        and set(variables) <= {"mediaId", "status", "progress"}
+    ):
+        return Plan("no_change", "already COMPLETED on AniList")
+
+    bits = [f"progress {state.progress} -> {progress}"] if progress != state.progress else []
+    if state.status != STATUS_COMPLETED:
+        bits.append(f"status {state.status or 'none'} -> {STATUS_COMPLETED}")
+    if score is not None:
+        bits.append(f"rated {score:g}/10")
+    if "completedAt" in variables:
+        bits.append(f"completed on {completed_on.isoformat()}")
+    reason = ", ".join(bits)
+    diff = _make_diff(state, variables, before, reason)
+    if score is not None:
+        diff.after["score"] = score
+    return Plan("write", reason, diff)
 
 
 def _make_diff(

@@ -167,7 +167,8 @@ log for a while.
 
 ### Plex webhook
 
-Copy the URL from the dashboard — it looks like:
+Copy the URL from the dashboard (shown until the first webhook arrives) or the
+**System** page — it looks like:
 
 ```
 http://192.168.1.10:8787/webhook/plex/3f9a1c...
@@ -200,7 +201,7 @@ The **Activity** log lists every event. Each row links to a "why?" page showing:
 - the exact API payload that was sent — or, in dry-run, that *would* have been
   sent, with the before and after state.
 
-Items that are uncertain or unmatched are held and counted on the dashboard. The
+Items that are uncertain or unmatched are held and counted in the top bar. The
 queue UI for fixing them, including the visual episode-range editor, is the next
 stage of work.
 
@@ -208,6 +209,29 @@ Events that matched but could not reach AniList are **deferred**, not failed —
 see [When AniList is down or throttled](#when-anilist-is-down-or-throttled).
 The Activity page filters by outcome with a count on each, and a failed or
 deferred event has a **Retry now** button on its page.
+
+### Rating a finished series
+
+With *Settings → Sync → Ask for my rating before marking a series complete*
+on (the default), finishing a series does not complete it straight away.
+Watching the final episode of a 12-episode series sets AniList to 11/12, and
+the series appears under **Ready to rate** on the dashboard, with a count in
+the top bar. Enter a rating out of 10 and press **Complete**: AniList gets
+COMPLETED, 12/12, your score, and a completion date of **the day you watched
+the final episode** — not the day you rated it. Finish something on 2
+November while travelling, rate it when you are home on the 4th, and AniList
+still says the 2nd.
+
+- The `…` menu offers **Complete without rating**, or **Don't complete**, which
+  stops waiting and writes nothing.
+- The rating is sent as AniList's 100-point `scoreRaw`, so it is shown in
+  whatever score format you use on AniList.
+- If AniList is down when you submit, the rating is kept and sent by the same
+  retry job as deferred events.
+- Dry-run applies: in dry-run both the hold and the completion are recorded on
+  the event's page but not sent.
+- Only a first completion of a finished-airing series is held. Rewatches and
+  still-airing shows behave as before.
 
 ---
 
@@ -218,11 +242,17 @@ deferred event has a **Retry now** button on its page.
 - **Replays are harmless by construction.** Every AniList write is absolute
   (`progress = N`), never an increment, so re-processing an event cannot
   double-count. Event de-duplication is for a tidy log, not for correctness.
-- **Progress is never lowered**, and **scores and notes are never written** —
-  those fields are not even declared in the GraphQL mutation.
+- **Progress is never lowered**, and **notes are never written**. Automatic
+  writes never carry a score either — the field is not declared in their
+  GraphQL mutation. A score is only ever sent from a rating you type in (see
+  [Rating a finished series](#rating-a-finished-series)), through a separate
+  mutation that also cannot carry notes.
+- **Start and finish dates are the day you watched**, in your `TZ`, not the day
+  the event happened to be processed — so an event deferred through an outage,
+  or found later by the reconcile sweep, is still dated correctly.
 - **Rate limits** are read from the APIs' own response headers rather than
   guessed. AniList is currently degraded to 30 requests/minute (90 normally);
-  `Retry-After` and `X-RateLimit-Reset` are honoured on a 429. The dashboard
+  `Retry-After` and `X-RateLimit-Reset` are honoured on a 429. The System page
   shows the live limit and flags it when it is below normal.
 - **Datasets** are cached in `/config/datasets` and in the database, refreshed
   daily with conditional GETs. If GitHub is unreachable the cached copy keeps
@@ -257,7 +287,7 @@ handled as a normal state rather than an error:
   403 maintenance page or Cloudflare challenge does not touch the token.
   Trying a new token on the settings page never marks the stored one broken.
 
-The dashboard's **AniList API** card shows the state (healthy, degraded,
+The **System** page's **AniList API** card shows the state (healthy, degraded,
 throttled, down), the last error, when requests resume, and the deferred
 backlog, with **Check AniList now** (one request, even while paused) and
 **Retry deferred now** buttons. A banner on every page says when AniList is
