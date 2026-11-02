@@ -123,6 +123,18 @@
     <a class="button secondary" href="/mal">Open</a>
   </div>
 
+  <div class="card" id="sonarr">
+    <h3>Sonarr</h3>
+    {% if sonarr.configured %}
+      <p><span class="ok">{{ sonarr.series }} series</span> <span class="muted small">read {{ sonarr.refreshed_at|ago }}</span></p>
+      {% if sonarr.last_error %}<p class="bad-text small">{{ sonarr.last_error }}</p>{% endif %}
+      <form method="post" action="/actions/refresh-sonarr"><button class="secondary">Refresh now</button></form>
+    {% else %}
+      <p class="muted">Not set up. Optional: it helps match shows Plex gives no TVDB id.
+        <a href="/settings#sonarr">Set up</a></p>
+    {% endif %}
+  </div>
+
   <div class="card" id="datasets">
     <h3>Mapping datasets</h3>
     {% if datasets %}

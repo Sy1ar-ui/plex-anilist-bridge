@@ -10,6 +10,7 @@
 <nav class="section-nav" aria-label="Settings sections">
   <a href="#plex">Plex</a>
   <a href="#anilist">AniList</a>
+  <a href="#sonarr">Sonarr</a>
   <a href="#behaviour">Sync</a>
   <a href="#mal">MyAnimeList</a>
   <a href="#notifications">Notifications</a>
@@ -100,6 +101,31 @@
       <small>Checked against AniList before it is stored. Easier: <a href="/setup/anilist">sign in with AniList</a>.</small>
     </label>
     <button>Save and verify</button>
+  </form>
+</section>
+
+<section class="panel" id="sonarr">
+  <h2>Sonarr <span class="muted small">optional</span></h2>
+  <p class="muted small">If Plex gives some shows no TVDB id (a TMDB-only or legacy agent, or Personal Media),
+    the bridge can look them up in Sonarr instead, by IMDb/TMDB id, folder name, or &mdash; as a guess held for
+    review &mdash; title. Read only: nothing is ever written to Sonarr.</p>
+  {% if sonarr.configured %}
+    <p class="ok">Connected &middot; {{ sonarr.series }} series, read {{ sonarr.refreshed_at|ago }}</p>
+  {% endif %}
+  {% if sonarr.last_error %}<p class="bad-text small">{{ sonarr.last_error }}</p>{% endif %}
+  <form method="post" action="/settings/sonarr">
+    <label>Sonarr address
+      <input name="sonarr_url" value="{{ settings.sonarr_url }}" placeholder="http://192.168.1.10:8989">
+      <small>Include any URL base, e.g. <code>http://host:8989/sonarr</code>.</small>
+    </label>
+    <label>API key
+      <input name="sonarr_api_key" type="password" autocomplete="off"
+             placeholder="{% if settings.sonarr_api_key %}unchanged{% else %}Sonarr &rarr; Settings &rarr; General &rarr; API Key{% endif %}">
+    </label>
+    <div class="button-row">
+      <button name="action" value="save">Save and test</button>
+      {% if sonarr.configured %}<button name="action" value="remove" class="secondary" formnovalidate>Remove</button>{% endif %}
+    </div>
   </form>
 </section>
 

@@ -35,6 +35,11 @@ DEFAULTS: dict[str, Any] = {
     "mal_sync_dates": False,
     # --- datasets -----------------------------------------------------------
     "dataset_refresh_hours": 24,
+    # --- Sonarr (optional; recovers TVDB ids Plex does not give) -------------
+    "sonarr_url": "",
+    "sonarr_api_key": "",
+    "sonarr_refresh_hours": 6,
+    "sonarr_last_error": "",
     # --- notifications ------------------------------------------------------
     "notify_webhook_url": "",
     "notify_service": "auto",         # auto | discord | ntfy | json

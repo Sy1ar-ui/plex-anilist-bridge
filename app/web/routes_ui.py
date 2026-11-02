@@ -14,7 +14,7 @@ import asyncio
 import logging
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -231,6 +231,7 @@ async def system_page(
         webhook_url=_webhook_url(request),
         jobs=scheduler.job_states(),
         mal_blocked=_mal_blocked(),
+        sonarr=_sonarr_status(),
         mal_last_poll=_watermark("mal_last_poll"),
         mal_last_summary=_watermark("mal_last_poll_summary"),
         notice=notice,
@@ -327,9 +328,16 @@ async def settings_page(
         chosen_account=int(account_row["id"]) if account_row else None,
         token_status=tokens.all_statuses(),
         notifications=_recent_notifications(),
+        sonarr=_sonarr_status(),
         notice=notice,
     )
     return templates.TemplateResponse(request, "settings.html", context)
+
+
+def _sonarr_status() -> dict[str, Any]:
+    from app import sonarr
+
+    return sonarr.status()
 
 
 def _recent_notifications() -> list[dict[str, Any]]:
@@ -510,6 +518,50 @@ async def save_behaviour(request: Request, _: None = Depends(require_session)):
     )
     scheduler.apply_settings()
     return _redirect("/settings#behaviour", "Settings saved", "ok")
+
+
+@router.post("/settings/sonarr")
+async def save_sonarr(
+    _: None = Depends(require_session), sonarr_url: str = Form(""), sonarr_api_key: str = Form(""),
+    action: str = Form("save"),
+):
+    """Save the Sonarr URL and key after checking them, then read the series list."""
+    from app import sonarr
+
+    if action == "remove":
+        settings_store.set_many({"sonarr_url": "", "sonarr_api_key": "", "sonarr_last_error": ""})
+        db.execute("DELETE FROM sonarr_series")
+        return _redirect("/settings#sonarr", "Sonarr removed. Matching no longer uses it.", "ok")
+
+    url = sonarr_url.strip().rstrip("/")
+    key = sonarr_api_key.strip() or str(settings_store.get("sonarr_api_key", "") or "")
+    if not url:
+        return _redirect("/settings#sonarr", "Enter Sonarr's address, e.g. http://192.168.1.10:8989.", "error")
+    if urlparse(url).scheme not in ("http", "https") or not key:
+        return _redirect("/settings#sonarr", "Sonarr needs an http(s) address and its API key.", "error")
+    try:
+        version = await sonarr.check(url, key)
+    except sonarr.SonarrError as exc:
+        return _redirect("/settings#sonarr", f"Not saved: {exc}.", "error")
+    settings_store.set_many({"sonarr_url": url, "sonarr_api_key": key})
+    try:
+        count = await sonarr.refresh()
+    except sonarr.SonarrError as exc:
+        settings_store.set("sonarr_last_error", str(exc))
+        return _redirect("/settings#sonarr", f"Saved, but the series list could not be read: {exc}.", "error")
+    return _redirect("/settings#sonarr", f"Connected to Sonarr {version}: {count} series.", "ok")
+
+
+@router.post("/actions/refresh-sonarr")
+async def action_refresh_sonarr(_: None = Depends(require_session)):
+    from app import sonarr
+
+    try:
+        count = await sonarr.refresh()
+    except sonarr.SonarrError as exc:
+        settings_store.set("sonarr_last_error", str(exc))
+        return _redirect("/system#sonarr", f"Sonarr refresh failed: {exc}.", "error")
+    return _redirect("/system#sonarr", f"Read {count} series from Sonarr.", "ok")
 
 
 @router.post("/settings/notify-test")

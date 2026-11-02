@@ -20,10 +20,10 @@ fixes, deliberately:
 | Config sprawl | Six environment variables, all optional. Everything else is in the UI. |
 | Title matching | Matching is by **ID** (TVDB/TMDB/IMDb → AniList), not by comparing title strings. |
 
-> **Status.** Everything on the [roadmap](#roadmap) except Sonarr is
-> implemented: the Plex → AniList leg, the mapping engine, the activity log, the
-> review queue, the setup wizard, and the AniList → MyAnimeList mirror with its
-> full-reconcile preview. Dry-run is on by default. The suite passes in CI and the image
+> **Status.** Everything on the [roadmap](#roadmap) is implemented: the Plex →
+> AniList leg, the mapping engine, the activity log, the review queue, the
+> setup wizard, the AniList → MyAnimeList mirror, notifications, and Sonarr as
+> an optional id source. Dry-run is on by default. The suite passes in CI and the image
 > builds for amd64 and arm64, but nothing has yet been run against a real Plex
 > server, AniList or MyAnimeList; see [what is and is not verified](#what-is-and-is-not-verified).
 
@@ -46,7 +46,8 @@ first one to produce a candidate wins:
 2. **The community dataset** ([PlexAniSync-Custom-Mappings]), keyed on exact
    Plex GUIDs. Human-curated, no guesswork.
 3. **[Fribb/anime-lists]**, keyed on TVDB/TMDB id + season + episode offset.
-4. **Sonarr** (optional, not yet wired up) purely to recover a missing TVDB id.
+4. **Sonarr** (optional) purely to recover a TVDB id Plex did not give, then
+   layers 1 and 3 are tried again with it. See [Sonarr](#sonarr-optional).
 5. **An AniList title search**, which is a guess and is therefore *never*
    confident — it produces an "uncertain" match at best.
 
@@ -311,6 +312,28 @@ reads both whole lists and shows every difference before anything is written:
 **Apply ticked** writes just those, through the same dry-run gate. If MAL fails
 part-way, the rest stay ticked for another try.
 
+## Sonarr (optional)
+
+Some Plex libraries give a show no TVDB id — a TMDB-only or legacy agent, or
+"Personal Media" — and the TVDB-keyed mapping layers then have nothing to go
+on. If you run Sonarr, add its address and API key under *Settings → Sonarr*.
+The bridge keeps a copy of Sonarr's series list (refreshed every 6 hours, and
+on **Refresh now** on the System page) and, only for shows Plex gave no TVDB
+id, looks them up there:
+
+1. by **IMDb or TMDB id**, if Plex gave one;
+2. by **folder name** — the show's folder in Plex against Sonarr's series
+   folder (mount points differ between containers; folder names do not);
+3. by **title** (and year, when both know it), including Sonarr's alternate
+   titles. This is a guess, so a match found this way is only ever
+   **uncertain** and held for review — the same rule as the AniList title
+   search.
+
+Two Sonarr series matching the same evidence means no recovery, and the trace
+says so. Every step shows in an event's "why?" page, for example *Sonarr
+recovered TVDB 72025 for "Crest of the Stars" by folder name*. Nothing is ever
+written to Sonarr.
+
 ## Notifications
 
 Set a webhook under *Settings → Sync → Notifications* to hear when something
@@ -491,7 +514,7 @@ tests/          fixtures and the suite
 - [x] Review queue, search-and-link, visual episode-range editor
 - [x] Setup wizard, Plex PIN link flow, AniList + MAL OAuth
 - [x] AniList → MAL leg with the full-reconcile preview
-- [ ] Sonarr as an optional ID source
+- [x] Sonarr as an optional ID source
 
 ---
 

@@ -26,6 +26,9 @@ class ShowIds:
     imdb_id: str | None = None
     title: str | None = None
     year: int | None = None
+    # The show's folder name on disk, as Plex sees it. Used only to look the
+    # show up in Sonarr when Plex gives no TVDB id.
+    folder: str | None = None
 
     def describe(self) -> str:
         parts = []
