@@ -479,6 +479,9 @@ table.log tr.row-skipped td { color: var(--muted); }
 
 .notify-log { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 6px; }
 
+.callout-token { display: block; border-left-color: var(--warn); background: var(--warn-bg); }
+.callout-token p { margin-bottom: 8px; }
+
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;

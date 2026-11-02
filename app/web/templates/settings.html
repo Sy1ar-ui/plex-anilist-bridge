@@ -14,6 +14,7 @@
   <a href="#behaviour">Sync</a>
   <a href="#mal">MyAnimeList</a>
   <a href="#notifications">Notifications</a>
+  <a href="#agent">Agent access</a>
   <a href="#advanced">Advanced</a>
   <a href="#password">Password</a>
 </nav>
@@ -211,11 +212,20 @@
       <label>Webhook URL
         <input name="notify_webhook_url" value="{{ settings.notify_webhook_url }}"
                placeholder="https://discord.com/api/webhooks/... or https://ntfy.sh/your-topic" autocomplete="off">
-        <small>A Discord webhook, an ntfy topic, or any URL that accepts a JSON POST. Treat it like a password.</small>
+        <small>A Discord webhook, an ntfy topic, an OpenClaw gateway&rsquo;s <code>/hooks/agent</code>, a Hermes
+          route (<code>http://host:8644/webhooks/&lt;route&gt;</code>), or any URL that accepts a JSON POST.
+          Treat it like a password.</small>
+      </label>
+      <label>Secret <span class="muted small">(OpenClaw hook token or Hermes route secret)</span>
+        <input name="notify_secret" type="password" autocomplete="off"
+               placeholder="{% if settings.notify_secret %}unchanged{% else %}only needed for an agent{% endif %}">
+        <small>OpenClaw: sent as a bearer token. Hermes: used to sign each request (V2 HMAC). Leave blank to keep the saved one.</small>
       </label>
       <label>Format
         <select name="notify_service">
-          {% for value, label in [('auto', 'Work it out from the URL'), ('discord', 'Discord'), ('ntfy', 'ntfy'), ('json', 'Plain JSON')] %}
+          {% for value, label in [('auto', 'Work it out from the URL'), ('discord', 'Discord'), ('ntfy', 'ntfy'),
+                                  ('openclaw', 'OpenClaw agent (/hooks/agent)'), ('hermes', 'Hermes agent (webhook route)'),
+                                  ('json', 'Plain JSON')] %}
           <option value="{{ value }}" {% if settings.notify_service == value %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
@@ -285,6 +295,42 @@
 
     <button>Save settings</button>
   </form>
+</section>
+
+<section class="panel" id="agent">
+  <h2>Agent access <span class="muted small">optional</span></h2>
+  <p class="muted small">Lets a personal agent (OpenClaw, Hermes, a script) act for you through a small API:
+    see what needs you, rate and complete a finished series, link or dismiss a review item. Every change
+    goes through the same rules as this page, dry run included. It cannot change settings or turn dry run off.</p>
+  {% if new_api_token %}
+    <div class="callout callout-token" role="alert">
+      <p><strong>Your new API token.</strong> Copy it into your agent now: it is shown only this once, and only
+        a hash of it is stored. Reloading this page would generate another one, so just
+        <a href="/settings#agent">carry on</a> when you have it.</p>
+      <div class="copy-row">
+        <pre class="copyable" id="api-token">{{ new_api_token }}</pre>
+        <button type="button" class="secondary" data-copy="api-token">Copy</button>
+      </div>
+    </div>
+  {% endif %}
+  {% if api_enabled %}
+    <p class="ok">On{% if api_last_used %} <span class="muted small">&middot; last used {{ api_last_used|int|timestamp|ago }}</span>{% else %} <span class="muted small">&middot; not used yet</span>{% endif %}</p>
+    <dl class="facts">
+      <dt>Base URL</dt><dd><code>{{ api_base }}</code></dd>
+      <dt>Auth</dt><dd><code>Authorization: Bearer &lt;token&gt;</code></dd>
+      <dt>Try it</dt><dd><code>curl -H "Authorization: Bearer &lt;token&gt;" {{ api_base }}</code> lists every endpoint</dd>
+    </dl>
+  {% else %}
+    <p class="muted">Off. Generating a token turns it on.</p>
+  {% endif %}
+  <form method="post" action="/settings/api-token" class="button-row">
+    <button name="action" value="generate" {% if api_enabled %}class="secondary"
+            onclick="return confirm('Replace the token? Agents using the old one will stop working.')"{% endif %}>
+      {% if api_enabled %}Replace token{% else %}Generate a token{% endif %}</button>
+    {% if api_enabled %}<button name="action" value="revoke" class="secondary"
+            onclick="return confirm('Turn the API off?')">Revoke</button>{% endif %}
+  </form>
+  {% include "_copy_script.html" %}
 </section>
 
 <section class="panel" id="password">

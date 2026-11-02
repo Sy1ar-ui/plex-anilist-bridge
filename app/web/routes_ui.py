@@ -294,6 +294,13 @@ def _webhook_url(request: Request) -> str:
 async def settings_page(
     request: Request, _: None = Depends(require_session), notice: str | None = None
 ) -> HTMLResponse:
+    return await _render_settings(request, notice=notice)
+
+
+async def _render_settings(
+    request: Request, *, notice: str | None = None, new_api_token: str | None = None
+) -> HTMLResponse:
+    """The settings page. ``new_api_token`` is only ever passed by the generate action."""
     server = plex_client.stored_server()
     accounts: list[dict[str, Any]] = []
     libraries: list[dict[str, Any]] = []
@@ -329,6 +336,10 @@ async def settings_page(
         token_status=tokens.all_statuses(),
         notifications=_recent_notifications(),
         sonarr=_sonarr_status(),
+        api_enabled=auth.api_enabled(),
+        api_last_used=settings_store.get("api_token_last_used", 0) or 0,
+        api_base=str(request.base_url).rstrip("/") + "/api/v1",
+        new_api_token=new_api_token,
         notice=notice,
     )
     return templates.TemplateResponse(request, "settings.html", context)
@@ -508,9 +519,12 @@ async def save_behaviour(request: Request, _: None = Depends(require_session)):
             "notify_webhook_url": str(form.get("notify_webhook_url", "")).strip(),
             "notify_service": (
                 str(form.get("notify_service"))
-                if form.get("notify_service") in ("auto", "discord", "ntfy", "json")
+                if form.get("notify_service") in ("auto", "discord", "ntfy", "json", "openclaw", "hermes")
                 else "auto"
             ),
+            # Blank keeps the stored secret: it is never echoed back into the page.
+            "notify_secret": (str(form.get("notify_secret") or "").strip()
+                              or str(settings_store.get("notify_secret", "") or "")),
             "notify_on_review": flag("notify_on_review"),
             "notify_on_rating": flag("notify_on_rating"),
             "notify_on_token_error": flag("notify_on_token_error"),
@@ -564,6 +578,22 @@ async def action_refresh_sonarr(_: None = Depends(require_session)):
     return _redirect("/system#sonarr", f"Read {count} series from Sonarr.", "ok")
 
 
+@router.post("/settings/api-token", response_class=HTMLResponse)
+async def api_token(request: Request, _: None = Depends(require_session), action: str = Form("generate")):
+    """Generate (or replace) or revoke the agent API token.
+
+    The new token is shown once, in this response, and never put in a URL or
+    stored: only its hash is kept.
+    """
+    if action == "revoke":
+        auth.revoke_api_token()
+        return _redirect("/settings#agent", "API token revoked. Agents can no longer use the API.", "ok")
+    token = auth.issue_api_token()
+    response = await _render_settings(request, new_api_token=token)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 @router.post("/settings/notify-test")
 async def notify_test(request: Request, _: None = Depends(require_session)):
     """Send a test to the URL in the form, saved or not. Saving is separate."""
@@ -573,6 +603,7 @@ async def notify_test(request: Request, _: None = Depends(require_session)):
     ok, message = await notify.send_test(
         url=str(form.get("notify_webhook_url", "") or "").strip() or None,
         service_name=str(form.get("notify_service", "") or "") or None,
+        secret=str(form.get("notify_secret", "") or "").strip() or None,
     )
     return _redirect("/settings#notifications", message, "ok" if ok else "error")
 

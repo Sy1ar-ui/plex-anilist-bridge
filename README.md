@@ -345,8 +345,10 @@ needs you:
   first rejected, then at most daily).
 
 Each can be switched off. The URL can be a Discord webhook, an ntfy topic
-(`https://ntfy.sh/your-topic` or your own server), or anything that accepts a
-JSON POST; the format is worked out from the URL unless you choose it. **Send a
+(`https://ntfy.sh/your-topic` or your own server), a personal agent — an
+OpenClaw gateway or a Hermes webhook route, see [Agent access](#agent-access)
+— or anything that accepts a JSON POST; the format is worked out from the URL
+unless you choose it. **Send a
 test** tries the URL in the box before you save it, and the last few sends are
 listed with any error.
 
@@ -355,6 +357,68 @@ broken webhook never delays or fails a sync. They link back to the right page,
 using the address you last opened the UI at. Discord mentions are disabled, so
 a show title can never ping anyone. Only your own viewing can cause one: other
 accounts' events are dropped before any of this runs.
+
+## Agent access
+
+If you use a personal agent such as [OpenClaw](https://docs.openclaw.ai) or
+[Hermes](https://github.com/NousResearch/hermes-agent) as your remote way in,
+the bridge can notify it, and the agent can act for you — rate a series you
+finished while away, link or dismiss a review item — through a small API.
+
+**1. Turn the API on.** *Settings → Agent access → Generate a token.* The token
+is shown once; only its hash is stored. Give your agent the token and the base
+URL shown there (`http://<bridge>:8787/api/v1`), for example in its
+instructions or a skill. `GET /api/v1` with the token lists every endpoint:
+
+| Endpoint | Does |
+|---|---|
+| `GET /api/v1/status` | dry run, AniList health, how many things need you |
+| `GET /api/v1/ratings` | finished series waiting for a rating |
+| `POST /api/v1/ratings/{id}` | `{"score": 8.5}` rates and completes; or `{"action": "complete_without_rating"}` / `{"action": "dont_complete"}` |
+| `GET /api/v1/review` | items the bridge could not match, with candidates |
+| `POST /api/v1/review/{event_id}/link` | `{"anilist_id": 21, "ep_from": 1, "ep_to": null, "start": 1}` |
+| `POST /api/v1/review/{event_id}/dismiss` | take an item out of the queue |
+| `GET /api/v1/activity` | recent events |
+
+Everything goes through the same rules as the web UI: dry run applies, progress
+is never lowered, a completion is still dated the day you watched the final
+episode. The API **cannot** change settings, turn dry run off, or read any
+token. *Replace token* or *Revoke* cuts an agent off at once.
+
+**2. Point notifications at the agent.** *Settings → Sync → Notifications*:
+
+- **OpenClaw** — URL `http://<gateway>:18789/hooks/agent`, format *OpenClaw*,
+  and in *Secret* the gateway's hook token (`hooks.token`, with
+  `hooks.enabled: true`; use a dedicated hook token, not the gateway's own).
+  Each notification starts an agent run with a message saying what happened,
+  linking to the page, and spelling out the API call that acts on it.
+- **Hermes** — create a webhook route (in `config.yaml` under
+  `platforms.webhook.extra.routes`, or with `hermes webhook subscribe`), then
+  use URL `http://<host>:8644/webhooks/<route>`, format *Hermes*, and the
+  route's secret. Requests are signed with Hermes's V2 scheme
+  (`X-Webhook-Timestamp` and `X-Webhook-Signature-V2`, HMAC-SHA256 of
+  `<timestamp>.<body>`). The JSON body has `event`, `title`, `message`, `link`,
+  `item` (the ids), `actions` (the API calls) and `text` (all of it, readable),
+  so a route prompt of `{text}` is enough:
+
+  ```yaml
+  platforms:
+    webhook:
+      enabled: true
+      extra:
+        routes:
+          anime:
+            secret: "<the same secret you entered in the bridge>"
+            prompt: "{text}"
+            deliver: telegram
+  ```
+
+**Send a test** sends a message whose action is `GET /api/v1/status`, so you
+can check the whole loop — notification in, API call back — in one go.
+
+Show titles come from your media library and end up in the agent's prompt, so
+the bridge marks them as data rather than instructions. Keep the API on your
+LAN or tailnet, as OpenClaw and Hermes recommend for their own endpoints.
 
 ---
 
