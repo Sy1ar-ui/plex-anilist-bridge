@@ -1,0 +1,120 @@
+[
+  {
+    "_comment": "A slice of Fribb/anime-lists with real values, trimmed to the fields the loader reads. Each entry is here to exercise a specific mapping case.",
+    "_case": "documentation only; the loader ignores entries without anidb_id"
+  },
+
+  {
+    "_case": "plain single-cour TV series: tvdb season 1, no offset",
+    "type": "TV",
+    "anidb_id": 1,
+    "anilist_id": 290,
+    "mal_id": 290,
+    "imdb_id": ["tt0286390"],
+    "themoviedb_id": { "tv": 26209 },
+    "tvdb_id": 72025,
+    "season": { "tvdb": 1, "tmdb": 1 }
+  },
+
+  {
+    "_case": "standalone movie, matchable by tmdb movie id or imdb id",
+    "type": "MOVIE",
+    "anidb_id": 7,
+    "anilist_id": 164,
+    "mal_id": 164,
+    "imdb_id": ["tt0119698"],
+    "themoviedb_id": { "movie": [128] }
+  },
+
+  {
+    "_case": "absolute numbering: upstream defaulttvdbseason=\"a\", so Fribb emits no season key at all",
+    "type": "TV",
+    "anidb_id": 69,
+    "anilist_id": 21,
+    "mal_id": 21,
+    "imdb_id": ["tt0388629"],
+    "themoviedb_id": { "tv": 37854 },
+    "tvdb_id": 81797
+  },
+
+  {
+    "_case": "season 0 entry on an absolute-numbered show, with an offset",
+    "type": "MOVIE",
+    "anidb_id": 411,
+    "anilist_id": 459,
+    "mal_id": 459,
+    "imdb_id": ["tt0814243"],
+    "themoviedb_id": { "movie": [19576] },
+    "tvdb_id": 81797,
+    "season": { "tvdb": 0 },
+    "episode_offset": { "tvdb": 1 }
+  },
+
+  {
+    "_case": "Re:Zero season 1",
+    "type": "TV",
+    "anidb_id": 11370,
+    "anilist_id": 21355,
+    "mal_id": 31240,
+    "imdb_id": ["tt5607616"],
+    "themoviedb_id": { "tv": 65942 },
+    "tvdb_id": 305089,
+    "season": { "tvdb": 1, "tmdb": 1 }
+  },
+
+  {
+    "_case": "an OVA with no MAL id: must surface as 'not syncable to MAL' rather than failing quietly",
+    "type": "OVA",
+    "anidb_id": 13430,
+    "anilist_id": 100049,
+    "imdb_id": ["tt5607616"],
+    "themoviedb_id": { "tv": 65942 },
+    "tvdb_id": 305089,
+    "season": { "tvdb": 0, "tmdb": 0 }
+  },
+
+  {
+    "_case": "split cour, first half: tvdb season 2 with no tvdb offset (the tmdb offset differs, which is why they are separate columns)",
+    "type": "TV",
+    "anidb_id": 14792,
+    "anilist_id": 108632,
+    "mal_id": 39587,
+    "imdb_id": ["tt5607616"],
+    "themoviedb_id": { "tv": 65942 },
+    "tvdb_id": 305089,
+    "season": { "tvdb": 2, "tmdb": 1 },
+    "episode_offset": { "tmdb": 26 }
+  },
+
+  {
+    "_case": "split cour, second half: same tvdb season, offset 13, so S02E14 is episode 1 here",
+    "type": "TV",
+    "anidb_id": 15593,
+    "anilist_id": 119661,
+    "mal_id": 42203,
+    "imdb_id": ["tt5607616"],
+    "themoviedb_id": { "tv": 65942 },
+    "tvdb_id": 305089,
+    "season": { "tvdb": 2, "tmdb": 1 },
+    "episode_offset": { "tvdb": 13, "tmdb": 38 }
+  },
+
+  {
+    "_case": "Gintama: also absolute-numbered upstream",
+    "type": "TV",
+    "anidb_id": 3468,
+    "anilist_id": 918,
+    "mal_id": 918,
+    "tvdb_id": 79895
+  },
+
+  {
+    "_case": "Gintama' has a real tvdb season, so it is matched the normal way",
+    "type": "TV",
+    "anidb_id": 8126,
+    "anilist_id": 9969,
+    "mal_id": 9969,
+    "tvdb_id": 79895,
+    "season": { "tvdb": 5 }
+  }
+]

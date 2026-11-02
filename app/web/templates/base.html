@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Plex AniList Bridge{% endblock %}</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+{% if dry_run %}
+<div class="banner banner-dry">
+  <strong>Dry run is on.</strong> Nothing is written to AniList or MyAnimeList.
+  Every event shows what <em>would</em> have been written.
+</div>
+{% endif %}
+{% if not password_set %}
+<div class="banner banner-warn">
+  <strong>No admin password is set.</strong> Anyone who can reach this page can
+  read your account tokens. <a href="/settings#password">Set one now.</a>
+</div>
+{% endif %}
+
+<header class="topbar">
+  <div class="brand"><a href="/">Plex &rarr; AniList Bridge</a></div>
+  <nav>
+    <a href="/" {% if request.url.path == '/' %}class="here"{% endif %}>Dashboard</a>
+    <a href="/activity" {% if request.url.path.startswith('/activity') %}class="here"{% endif %}>Activity</a>
+    <a href="/settings" {% if request.url.path == '/settings' %}class="here"{% endif %}>Settings</a>
+    {% if pending_review %}
+    <a href="/activity?status=held" class="pill">{{ pending_review }} to review</a>
+    {% endif %}
+  </nav>
+  {% if password_set %}
+  <form method="post" action="/logout" class="inline"><button class="link">Sign out</button></form>
+  {% endif %}
+</header>
+
+{% if notice %}<div class="notice">{{ notice }}</div>{% endif %}
+
+<main>
+{% block content %}{% endblock %}
+</main>
+
+<footer>
+  <span>plex-anilist-bridge {{ app_version }}</span>
+  <span>GPL-3.0 &middot; mapping logic partly derived from
+    <a href="https://github.com/RickDB/PlexAniSync">PlexAniSync</a></span>
+</footer>
+</body>
+</html>

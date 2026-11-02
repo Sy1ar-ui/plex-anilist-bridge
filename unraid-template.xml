@@ -1,0 +1,73 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>plex-anilist-bridge</Name>
+  <Repository>ghcr.io/666syner/plex-anilist-bridge:0.1.0</Repository>
+  <Registry>https://ghcr.io/666syner/plex-anilist-bridge</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/666Syner/plex-anilist-bridge/issues</Support>
+  <Project>https://github.com/666Syner/plex-anilist-bridge</Project>
+  <Overview>
+    Syncs your Plex watch activity to AniList, and mirrors AniList to
+    MyAnimeList. Event driven through Plex webhooks (Plex Pass required), with a
+    periodic reconcile against your Plex history as a safety net.
+
+    Built to fix the things that make PlexAniSync painful:
+    - Mapping corrections are made in the web UI and stored in the database.
+      There is no YAML to hand-edit.
+    - Settings and corrections apply immediately. Nothing needs a restart.
+    - Every item shows what it matched to, why, and how confident it is.
+      Failures state exactly what was missing.
+    - Dry-run mode is ON by default, so you can watch what it would do before
+      letting it write anything.
+
+    On a shared server only your own activity is synced: you pick your account
+    from a list during setup and everyone else's events are discarded before
+    anything about them is processed or logged.
+
+    First run: open the WebUI, add your Plex server, pick your account and
+    libraries, connect AniList, then copy the webhook URL from the dashboard
+    into Plex (Settings - Webhooks). Set an admin password while you are there;
+    the UI holds tokens to your accounts.
+
+    Licensed GPL-3.0-or-later. Mapping logic is partly derived from PlexAniSync.
+  </Overview>
+  <Category>MediaApp:Video Tools:Utilities</Category>
+  <WebUI>http://[IP]:[PORT:8787]/</WebUI>
+  <TemplateURL/>
+  <Icon>https://raw.githubusercontent.com/666Syner/plex-anilist-bridge/main/docs/icon.png</Icon>
+  <DonateText/>
+  <DonateLink/>
+  <Requires>Plex Pass, for webhooks.</Requires>
+
+  <Config Name="WebUI Port" Target="8787" Default="8787" Mode="tcp"
+          Description="Port for the web UI and the Plex webhook endpoint."
+          Type="Port" Display="always" Required="true" Mask="false">8787</Config>
+
+  <Config Name="Config Path" Target="/config" Default="/mnt/user/appdata/plex-anilist-bridge"
+          Mode="rw"
+          Description="Holds the SQLite database (settings, mappings, event history, account tokens) and the cached mapping datasets. Put this on your SSD cache. It contains tokens to your AniList and MyAnimeList accounts, so treat it as sensitive."
+          Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/plex-anilist-bridge</Config>
+
+  <Config Name="PUID" Target="PUID" Default="99"
+          Description="User id to run as. Unraid default is 99 (nobody)."
+          Type="Variable" Display="advanced" Required="false" Mask="false">99</Config>
+
+  <Config Name="PGID" Target="PGID" Default="100"
+          Description="Group id to run as. Unraid default is 100 (users)."
+          Type="Variable" Display="advanced" Required="false" Mask="false">100</Config>
+
+  <Config Name="UMASK" Target="UMASK" Default="022"
+          Description="File creation mask for files written to /config."
+          Type="Variable" Display="advanced" Required="false" Mask="false">022</Config>
+
+  <Config Name="TZ" Target="TZ" Default="Europe/London"
+          Description="Timezone, used for timestamps in the UI and logs."
+          Type="Variable" Display="always" Required="false" Mask="false">Europe/London</Config>
+
+  <Config Name="LOG_LEVEL" Target="LOG_LEVEL" Default="INFO"
+          Description="DEBUG, INFO, WARNING or ERROR. Logs are structured JSON on stdout."
+          Type="Variable" Display="advanced" Required="false" Mask="false">INFO</Config>
+</Container>

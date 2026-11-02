@@ -1,0 +1,12 @@
+.git
+.gitignore
+.venv
+venv
+__pycache__
+*.py[cod]
+.pytest_cache
+tests
+config
+docker-compose.yml
+unraid-template.xml
+README.md

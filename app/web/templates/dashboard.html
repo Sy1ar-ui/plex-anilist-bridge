@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}Dashboard &middot; Plex AniList Bridge{% endblock %}
+{% block content %}
+
+<h1>Dashboard</h1>
+
+<section class="cards">
+  <div class="card">
+    <h3>Plex</h3>
+    {% if plex_configured %}
+      <p class="ok">Connected</p>
+      <p class="muted">{{ plex_base_url }}</p>
+      {% if plex_account %}
+        <p>Watching for <strong>{{ plex_account.name }}</strong>
+           <span class="muted">(account {{ plex_account.id }})</span></p>
+      {% else %}
+        <p class="bad">No account chosen &mdash; every event will be dropped.
+           <a href="/settings">Choose one</a>.</p>
+      {% endif %}
+      <p class="muted">
+        {{ enabled_libraries|length }} library(ies) enabled:
+        {{ enabled_libraries|map(attribute='title')|join(', ') or 'none' }}
+      </p>
+    {% else %}
+      <p class="bad">Not configured</p>
+      <p><a href="/settings">Add your Plex server</a></p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3>Tokens</h3>
+    {% for provider, record in token_status.items() %}
+    <p>
+      <span class="label">{{ provider }}</span>
+      {% if record.status == 'ok' %}
+        <span class="ok">ok</span>
+        {% if record.account_name %}<span class="muted">as {{ record.account_name }}</span>{% endif %}
+      {% elif record.status == 'broken' %}
+        <span class="bad">broken</span>
+      {% elif record.status == 'expiring' %}
+        <span class="warn">expiring</span>
+      {% else %}
+        <span class="muted">not connected</span>
+      {% endif %}
+    </p>
+    {% if record.last_error %}<p class="bad small">{{ record.last_error }}</p>{% endif %}
+    {% endfor %}
+    <p><a href="/settings">Connect or re-authorise</a></p>
+  </div>
+
+  <div class="card">
+    <h3>Activity</h3>
+    <p>Last webhook: <strong>{{ last_webhook or 'never' }}</strong></p>
+    <p>Last reconcile: <strong>{{ last_reconcile or 'never' }}</strong></p>
+    <p>{{ event_total }} event(s) recorded</p>
+    <p class="muted small">
+      {{ counters.accepted }} accepted &middot;
+      {{ counters.dropped_other_accounts }} dropped (other accounts) &middot;
+      {{ counters.ignored }} ignored
+    </p>
+    {% if pending_review %}
+      <p class="warn">{{ pending_review }} waiting for review</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3>Mapping datasets</h3>
+    {% if datasets %}
+      {% for ds in datasets %}
+      <p>
+        <span class="label">{{ ds.name }}</span>
+        {% if ds.status == 'ok' %}<span class="ok">ok</span>
+        {% elif ds.status == 'stale' %}<span class="warn">stale cache</span>
+        {% else %}<span class="bad">{{ ds.status }}</span>{% endif %}
+        <span class="muted">{{ ds.row_count }} rows, {{ ds.fetched_at }}</span>
+      </p>
+      {% if ds.last_error %}<p class="bad small">{{ ds.last_error }}</p>{% endif %}
+      {% endfor %}
+    {% else %}
+      <p class="muted">Not loaded yet.</p>
+    {% endif %}
+    <form method="post" action="/actions/refresh-datasets">
+      <button>Refresh now</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h3>AniList rate limit</h3>
+    <p>{{ anilist_limit }} requests/minute
+      {% if anilist_remaining is not none %}
+        <span class="muted">({{ anilist_remaining }} left in this window)</span>
+      {% endif %}
+    </p>
+    <p class="muted small">
+      Adopted from AniList's own response headers, so it follows the live limit
+      rather than a guess.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>Scheduled jobs</h3>
+    {% for job in jobs %}
+      <p><span class="label">{{ job.name }}</span>
+         <span class="muted">next {{ job.next_run or 'n/a' }}</span></p>
+    {% else %}
+      <p class="muted">Scheduler not running.</p>
+    {% endfor %}
+    <form method="post" action="/actions/reconcile">
+      <button>Reconcile Plex history now</button>
+    </form>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Plex webhook</h2>
+  <p>In Plex: <em>Settings &rarr; Webhooks &rarr; Add Webhook</em>, and paste this URL.</p>
+  <pre class="copyable">{{ webhook_url }}</pre>
+  <p class="muted small">
+    The random part of the path is the secret: Plex cannot send an
+    authentication header with a webhook, so the URL itself has to be the
+    credential. Treat it like a password. Opening it in a browser returns a
+    small status page, which is a quick way to prove the path reaches the
+    container.
+  </p>
+</section>
+
+{% endblock %}

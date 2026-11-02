@@ -1,0 +1,50 @@
+# A slice of RickDB/PlexAniSync-Custom-Mappings (series-tvdb.en.yaml), with the
+# real Plex GUIDs and AniList ids. Trimmed to the entries the tests need.
+#
+# Note the two shapes that matter:
+#   * Gintama seasons 1-4 all map to AniList 918, so the entry episode has to
+#     carry a running total across those Plex seasons.
+#   * Gintama season 10 is split at episode 13 by a `start`, which the loader
+#     normalises to ep_offset = start - 1 = 12.
+entries:
+  - title: "Gintama"
+    guid: plex://show/5d9c08273c3f87001f348b54
+    seasons:
+      - season: 1
+        anilist-id: 918
+      - season: 2
+        anilist-id: 918
+      - season: 3
+        anilist-id: 918
+      - season: 4
+        anilist-id: 918
+      - season: 5
+        anilist-id: 9969
+      - season: 10
+        anilist-id: 100784
+      - season: 10
+        anilist-id: 101925
+        start: 13
+
+  # A `start` of 0 means the AniList entry is one ahead of the Plex numbering
+  # (AniList counts a special as an episode; TVDB does not). It normalises to
+  # ep_offset = -1, so entry_episode = episode + 1 falls out of the same formula.
+  - title: "Offset Ahead Example"
+    guid: plex://show/aaaaaaaaaaaaaaaaaaaaaaaa
+    seasons:
+      - season: 1
+        anilist-id: 555001
+        start: 0
+
+  # An entry with no guid is unusable here: this project matches on ids, not
+  # titles, so the loader must drop it rather than half-import it.
+  - title: "Title Only, No Guid"
+    seasons:
+      - season: 1
+        anilist-id: 999999
+
+  - title: "A Movie"
+    guid: plex://movie/bbbbbbbbbbbbbbbbbbbbbbbb
+    seasons:
+      - season: 1
+        anilist-id: 555002

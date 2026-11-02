@@ -1,0 +1,161 @@
+:root {
+  --bg: #14161a;
+  --panel: #1c1f26;
+  --panel-2: #23272f;
+  --line: #2f343d;
+  --text: #e4e7ec;
+  --muted: #959cab;
+  --accent: #5b8def;
+  --ok: #4fbf7b;
+  --warn: #e0a940;
+  --bad: #e2585b;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f5f6f8;
+    --panel: #ffffff;
+    --panel-2: #f0f2f5;
+    --line: #dcdfe5;
+    --text: #1a1d23;
+    --muted: #666d7a;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+a { color: var(--accent); }
+a:hover { text-decoration: underline; }
+
+main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 64px; }
+
+h1 { font-size: 24px; margin: 0 0 8px; }
+h2 { font-size: 18px; margin: 0 0 12px; }
+h3 { font-size: 14px; margin: 0 0 10px; text-transform: uppercase;
+     letter-spacing: .06em; color: var(--muted); }
+h4 { font-size: 12px; margin: 0 0 4px; color: var(--muted); }
+
+/* ---- bars --------------------------------------------------------------- */
+.topbar {
+  display: flex; align-items: center; gap: 20px;
+  padding: 12px 16px; background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.brand a { font-weight: 600; text-decoration: none; }
+.topbar nav { display: flex; gap: 16px; margin-left: auto; align-items: center; }
+.topbar nav a { text-decoration: none; color: var(--muted); }
+.topbar nav a.here { color: var(--text); font-weight: 600; }
+.topbar .inline { margin: 0; }
+
+.banner { padding: 10px 16px; font-size: 14px; }
+.banner-dry { background: #2b3a55; color: #dce7ff; border-bottom: 1px solid #3a4e73; }
+.banner-warn { background: #4a3a1c; color: #ffe9c2; border-bottom: 1px solid #6b5426; }
+.notice {
+  max-width: 1100px; margin: 16px auto 0; padding: 10px 14px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+}
+
+footer {
+  display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  max-width: 1100px; margin: 0 auto; padding: 16px;
+  color: var(--muted); font-size: 12px; border-top: 1px solid var(--line);
+}
+
+/* ---- cards and panels --------------------------------------------------- */
+.cards { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); }
+.card, .panel {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 8px; padding: 16px;
+}
+.panel { margin-top: 24px; }
+.panel.narrow { max-width: 420px; }
+.card p { margin: 6px 0; }
+
+/* ---- forms -------------------------------------------------------------- */
+label { display: block; margin: 12px 0; }
+label.check { display: flex; align-items: center; gap: 8px; }
+label.check input { margin: 0; }
+input[type=text], input[type=password], input[type=number], input:not([type]), select {
+  display: block; width: 100%; max-width: 460px; margin-top: 4px;
+  padding: 8px 10px; background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--line); border-radius: 6px; font: inherit;
+}
+input[type=number] { max-width: 120px; display: inline-block; }
+small { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
+fieldset { border: 1px solid var(--line); border-radius: 6px; margin: 16px 0; padding: 12px 16px; }
+legend { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+
+button {
+  margin-top: 8px; padding: 8px 14px; font: inherit; font-weight: 500;
+  background: var(--accent); color: #fff; border: 0; border-radius: 6px; cursor: pointer;
+}
+button:hover { filter: brightness(1.08); }
+button.link { background: none; color: var(--muted); padding: 0; }
+
+ul.choices { list-style: none; padding: 0; margin: 8px 0; }
+ul.choices li { padding: 4px 0; }
+ul.choices label { display: flex; align-items: center; gap: 8px; margin: 0; }
+ul.choices input { width: auto; margin: 0; }
+
+.filters { display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; }
+.filters label { margin: 0; }
+
+/* ---- tables ------------------------------------------------------------- */
+table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line);
+         vertical-align: top; }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+table.log tr.row-error td, table.log tr.row-unmatched td { background: rgba(226, 88, 91, .07); }
+table.log tr.row-held td { background: rgba(224, 169, 64, .08); }
+
+/* ---- bits --------------------------------------------------------------- */
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+.nowrap { white-space: nowrap; }
+.ok { color: var(--ok); font-weight: 600; }
+.warn { color: var(--warn); font-weight: 600; }
+.bad { color: var(--bad); font-weight: 600; }
+.label { display: inline-block; min-width: 86px; color: var(--muted); }
+.detail { background: var(--panel-2); border-left: 3px solid var(--accent);
+          padding: 10px 12px; border-radius: 0 6px 6px 0; }
+.summary { font-size: 15px; }
+
+.tag {
+  display: inline-block; padding: 1px 7px; border-radius: 10px;
+  background: var(--panel-2); border: 1px solid var(--line);
+  font-size: 11px; color: var(--muted); white-space: nowrap;
+}
+.tag-written, .tag-ok, .tag-hit, .tag-confident { border-color: var(--ok); color: var(--ok); }
+.tag-would_write, .tag-dry, .tag-dry_run, .tag-override { border-color: var(--accent); color: var(--accent); }
+.tag-held, .tag-uncertain, .tag-rejected { border-color: var(--warn); color: var(--warn); }
+.tag-unmatched, .tag-error { border-color: var(--bad); color: var(--bad); }
+
+.pill {
+  background: var(--warn); color: #221a06; padding: 2px 10px;
+  border-radius: 10px; font-size: 12px; font-weight: 600; text-decoration: none;
+}
+
+pre {
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: 10px; overflow-x: auto; font-size: 12px; margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+pre.copyable { user-select: all; font-size: 13px; }
+
+.cols { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.write { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px; }
+.write:first-of-type { border-top: 0; }
+.pager { display: flex; gap: 16px; align-items: center; margin-top: 16px; }
+
+@media (max-width: 640px) {
+  .topbar { flex-wrap: wrap; gap: 10px; }
+  .topbar nav { margin-left: 0; flex-wrap: wrap; }
+  main { padding: 16px; }
+}

@@ -1,0 +1,24 @@
+{
+  "event": "media.scrobble",
+  "user": true,
+  "owner": true,
+  "Account": { "id": 1, "title": "me", "thumb": "https://plex.tv/users/abc/avatar" },
+  "Server": { "title": "tower", "uuid": "aaaa-bbbb-cccc" },
+  "Player": { "local": true, "title": "Living Room TV", "uuid": "player-1" },
+  "Metadata": {
+    "librarySectionType": "show",
+    "ratingKey": "48291",
+    "key": "/library/metadata/48291",
+    "parentRatingKey": "48280",
+    "grandparentRatingKey": "48270",
+    "guid": "plex://episode/5d9c112e4b4a3f001f3c9a21",
+    "librarySectionID": 3,
+    "type": "episode",
+    "title": "Hello, Rem",
+    "grandparentTitle": "Re:ZERO -Starting Life in Another World-",
+    "parentTitle": "Season 2",
+    "index": 14,
+    "parentIndex": 2,
+    "year": 2020
+  }
+}

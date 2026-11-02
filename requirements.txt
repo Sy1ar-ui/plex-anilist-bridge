@@ -1,0 +1,9 @@
+# Runtime dependencies. Pinned exactly on purpose: no ranges, no ":latest".
+fastapi==0.162.0
+uvicorn==0.54.0
+jinja2==3.1.6
+httpx==0.28.1
+PlexAPI==4.18.3
+PyYAML==6.0.3
+APScheduler==3.11.3
+python-multipart==0.0.33

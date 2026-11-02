@@ -1,0 +1,21 @@
+{
+  "event": "media.scrobble",
+  "user": true,
+  "owner": false,
+  "Account": { "id": 77, "title": "a-friend", "thumb": "https://plex.tv/users/zzz/avatar" },
+  "Server": { "title": "tower", "uuid": "aaaa-bbbb-cccc" },
+  "Player": { "local": false, "title": "Friend Phone", "uuid": "player-9" },
+  "Metadata": {
+    "librarySectionType": "show",
+    "ratingKey": "99001",
+    "grandparentRatingKey": "99000",
+    "guid": "plex://episode/5d9c112e4b4a3f001f3c9999",
+    "librarySectionID": 3,
+    "type": "episode",
+    "title": "A Secret Episode Title",
+    "grandparentTitle": "Someone Elses Private Show",
+    "parentTitle": "Season 1",
+    "index": 3,
+    "parentIndex": 1
+  }
+}

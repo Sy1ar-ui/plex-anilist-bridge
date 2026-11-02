@@ -1,0 +1,20 @@
+# For local testing. On Unraid use the Community Applications template
+# (unraid-template.xml) instead.
+services:
+  plex-anilist-bridge:
+    build: .
+    image: ghcr.io/666syner/plex-anilist-bridge:0.1.0
+    container_name: plex-anilist-bridge
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    environment:
+      # The only environment variables there are. Everything else is set in the
+      # web UI and takes effect without a restart.
+      PORT: "8787"
+      PUID: "99"
+      PGID: "100"
+      UMASK: "022"
+      TZ: "Europe/London"
+    volumes:
+      - ./config:/config

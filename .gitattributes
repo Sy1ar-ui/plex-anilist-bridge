@@ -1,0 +1,13 @@
+# The deliverable is a Linux container, so everything in the repository is
+# stored and checked out with LF. Without this, a Windows checkout gives
+# docker/entrypoint.sh CRLF endings and the container dies with
+# "bad interpreter: /bin/sh^M".
+* text=auto eol=lf
+
+*.sh      text eol=lf
+*.py      text eol=lf
+*.sql     text eol=lf
+Dockerfile text eol=lf
+
+*.png binary
+*.jpg binary

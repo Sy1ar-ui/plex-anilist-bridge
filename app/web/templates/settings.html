@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% block title %}Settings &middot; Plex AniList Bridge{% endblock %}
+{% block content %}
+
+<h1>Settings</h1>
+<p class="muted">
+  Everything here takes effect immediately. Nothing needs a container restart,
+  and there is no file to edit.
+</p>
+
+<section class="panel">
+  <h2>1. Plex server</h2>
+  {% if plex_error %}<p class="bad">{{ plex_error }}</p>{% endif %}
+  <form method="post" action="/settings/plex">
+    <label>Server URL
+      <input name="base_url" value="{{ plex_base_url }}" placeholder="http://192.168.1.10:32400" required>
+    </label>
+    <label>Plex token
+      <input name="token" type="password" placeholder="{% if plex_token_set %}unchanged{% else %}X-Plex-Token{% endif %}">
+      <small>
+        A server URL and token are required, not optional: Plex webhooks do not
+        include a show's TVDB/TMDB ids, so they have to be read from the server.
+        The browser sign-in flow replaces this paste box in a later step.
+      </small>
+    </label>
+    <button>Save and test</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>2. Which account counts</h2>
+  {% if accounts %}
+  <p class="muted">
+    Your server is shared, so pick yourself. Events from every other account are
+    discarded before anything about them is processed or logged.
+  </p>
+  <form method="post" action="/settings/account">
+    <ul class="choices">
+      {% for account in accounts %}
+      <li>
+        <label>
+          <input type="radio" name="account_id" value="{{ account.id }}"
+                 {% if chosen_account == account.id %}checked{% endif %}
+                 onchange="document.getElementById('account_name').value = this.dataset.name"
+                 data-name="{{ account.name }}">
+          {{ account.name }} <span class="muted">(account {{ account.id }})</span>
+        </label>
+      </li>
+      {% endfor %}
+    </ul>
+    <input type="hidden" name="account_name" id="account_name" value="">
+    <button>Save account</button>
+  </form>
+  {% else %}
+  <p class="muted">Connect a Plex server first and the accounts will be listed here.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>3. Anime libraries</h2>
+  {% if libraries %}
+  <form method="post" action="/settings/libraries">
+    <ul class="choices">
+      {% for lib in libraries %}
+      <li>
+        <label>
+          <input type="checkbox" name="section_id" value="{{ lib.section_id }}"
+                 {% if lib.section_id in enabled_sections %}checked{% endif %}>
+          {{ lib.title }} <span class="muted">({{ lib.kind }})</span>
+        </label>
+      </li>
+      {% endfor %}
+    </ul>
+    <button>Save libraries</button>
+  </form>
+  {% else %}
+  <p class="muted">Connect a Plex server first.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>4. AniList</h2>
+  {% set anilist = token_status['anilist'] %}
+  {% if anilist.status == 'ok' %}
+    <p class="ok">Connected as {{ anilist.account_name }}</p>
+  {% elif anilist.last_error %}
+    <p class="bad">{{ anilist.last_error }}</p>
+  {% endif %}
+  <form method="post" action="/settings/anilist-token">
+    <label>AniList access token
+      <input name="access_token" type="password" required>
+      <small>
+        Interim step: paste a token for now. The browser OAuth flow arrives with
+        the setup wizard, and will replace this. The token is verified against
+        AniList before it is stored.
+      </small>
+    </label>
+    <button>Save and verify</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>5. Behaviour</h2>
+  <form method="post" action="/settings/behaviour">
+    <fieldset>
+      <legend>Safety</legend>
+      <label class="check">
+        <input type="checkbox" name="dry_run" {% if settings.dry_run %}checked{% endif %}>
+        Dry run &mdash; work everything out but write nothing
+      </label>
+      <label class="check">
+        <input type="checkbox" name="sync_enabled" {% if settings.sync_enabled %}checked{% endif %}>
+        Syncing enabled
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Matching</legend>
+      <label class="check">
+        <input type="checkbox" name="skip_specials" {% if settings.skip_specials %}checked{% endif %}>
+        Skip specials (Plex season 0)
+      </label>
+      <label class="check">
+        <input type="checkbox" name="add_untracked" {% if settings.add_untracked %}checked{% endif %}>
+        Add titles that are not on my AniList list yet
+      </label>
+      <label>When a match is uncertain
+        <select name="uncertain_action">
+          <option value="hold" {% if settings.uncertain_action == 'hold' %}selected{% endif %}>
+            Hold it for review (default)
+          </option>
+          <option value="apply_and_flag" {% if settings.uncertain_action == 'apply_and_flag' %}selected{% endif %}>
+            Apply it, but flag it in the activity log
+          </option>
+        </select>
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Update rules</legend>
+      <label>Rewatching something already COMPLETED
+        <select name="rewatch_action">
+          <option value="ignore" {% if settings.rewatch_action == 'ignore' %}selected{% endif %}>
+            Ignore it (default)
+          </option>
+          <option value="repeating" {% if settings.rewatch_action == 'repeating' %}selected{% endif %}>
+            Set the entry to REPEATING
+          </option>
+        </select>
+      </label>
+      <label class="check">
+        <input type="checkbox" name="set_dates" {% if settings.set_dates %}checked{% endif %}>
+        Set start/finish dates on status changes
+      </label>
+      <p class="muted small">
+        Progress is never lowered, and scores and notes are never written &mdash;
+        those fields are not even in the mutation.
+      </p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Schedules</legend>
+      <label>Reconcile Plex history every
+        <input type="number" name="reconcile_interval_hours" min="1" max="168"
+               value="{{ settings.reconcile_interval_hours }}"> hours
+      </label>
+      <label>Reconcile looks back
+        <input type="number" name="reconcile_lookback_hours" min="1" max="720"
+               value="{{ settings.reconcile_lookback_hours }}"> hours
+      </label>
+      <label>Refresh mapping datasets every
+        <input type="number" name="dataset_refresh_hours" min="1" max="168"
+               value="{{ settings.dataset_refresh_hours }}"> hours
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Notifications</legend>
+      <label>Webhook URL (Discord or ntfy)
+        <input name="notify_webhook_url" value="{{ settings.notify_webhook_url }}"
+               placeholder="https://discord.com/api/webhooks/...">
+      </label>
+    </fieldset>
+
+    <button>Save settings</button>
+  </form>
+</section>
+
+<section class="panel" id="password">
+  <h2>6. Admin password</h2>
+  <p class="muted">
+    This page holds tokens to your accounts. Even on a LAN, set a password.
+  </p>
+  <form method="post" action="/settings/password">
+    <label>{% if password_set %}New password{% else %}Password{% endif %}
+      <input name="password" type="password" minlength="8" required>
+    </label>
+    <button>{% if password_set %}Change{% else %}Set{% endif %} password</button>
+  </form>
+</section>
+
+{% endblock %}

@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Event {{ event.id }} &middot; Plex AniList Bridge{% endblock %}
+{% block content %}
+
+<p><a href="/activity">&larr; back to activity</a></p>
+
+<h1>{{ event.show_title or 'Unknown item' }}
+  {% if event.media_kind == 'episode' %}
+    <span class="muted">S{{ '%02d' % (event.season or 0) }}E{{ '%02d' % (event.episode or 0) }}</span>
+  {% endif %}
+</h1>
+
+<p>
+  <span class="tag tag-{{ event.status }}">{{ event.status }}</span>
+  {% if event.confidence %}<span class="tag tag-{{ event.confidence }}">{{ event.confidence }}</span>{% endif %}
+  <span class="tag">{{ event.source }}</span>
+  <span class="muted">{{ event.received_at }}</span>
+</p>
+
+<p class="detail">{{ event.detail or '' }}</p>
+
+<section class="panel">
+  <h2>Why it matched this way</h2>
+  {% if trace %}
+    <p class="summary">{{ trace.summary }}</p>
+    <table class="trace">
+      <thead><tr><th>Layer</th><th></th><th>What happened</th></tr></thead>
+      <tbody>
+      {% for step in trace.steps %}
+      <tr>
+        <td class="nowrap"><span class="tag">{{ step.layer }}</span></td>
+        <td class="nowrap"><span class="tag tag-{{ step.outcome }}">{{ step.outcome }}</span></td>
+        <td>{{ step.detail }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if trace.candidates %}
+    <h3>Other candidates</h3>
+    <ul>
+      {% for c in trace.candidates %}
+      <li>
+        <a href="https://anilist.co/anime/{{ c.anilist_id }}" target="_blank" rel="noreferrer">
+          {{ c.title or ('AniList ' ~ c.anilist_id) }}</a>
+        &mdash; entry episode {{ c.entry_episode }}
+        {% if c.total_episodes %}<span class="muted">of {{ c.total_episodes }}</span>{% endif %}
+        {% if c.note %}<span class="muted">&middot; {{ c.note }}</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  {% else %}
+    <p class="muted">No match trace was recorded for this event.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>What was sent</h2>
+  {% if writes %}
+    {% for w in writes %}
+    <div class="write">
+      <p>
+        <span class="tag">{{ w.target }}</span>
+        <span class="tag tag-{{ w.result }}">{{ w.result }}</span>
+        {% if w.dry_run %}<span class="tag tag-dry">dry run</span>{% endif %}
+        <span class="muted">{{ w.operation }} &middot; {{ w.at }}</span>
+      </p>
+      {% if w.error %}<p class="bad">{{ w.error }}</p>{% endif %}
+      <div class="cols">
+        <div><h4>Request</h4><pre>{{ w.request_json }}</pre></div>
+        <div><h4>Before</h4><pre>{{ w.before_json }}</pre></div>
+        <div><h4>After</h4><pre>{{ w.after_json }}</pre></div>
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <p class="muted">Nothing was written for this event.</p>
+  {% endif %}
+</section>
+
+{% endblock %}

@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Activity &middot; Plex AniList Bridge{% endblock %}
+{% block content %}
+
+<h1>Activity</h1>
+
+<form method="get" action="/activity" class="filters">
+  <label>Status
+    <select name="status" onchange="this.form.submit()">
+      <option value="">any</option>
+      {% for s in statuses %}
+      <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Show <input name="q" value="{{ q }}" placeholder="title contains..."></label>
+  <button>Filter</button>
+  <span class="muted">{{ total }} matching event(s)</span>
+</form>
+
+{% if events %}
+<table class="log">
+  <thead>
+    <tr><th>When</th><th>Item</th><th>Match</th><th>Outcome</th><th></th></tr>
+  </thead>
+  <tbody>
+  {% for e in events %}
+  <tr class="row-{{ e.status }}">
+    <td class="nowrap muted small">{{ (e.viewed_at or e.received_at)[:19] }}<br>
+        <span class="tag">{{ e.source }}</span></td>
+    <td>
+      <strong>{{ e.show_title or 'unknown' }}</strong>
+      {% if e.media_kind == 'episode' %}
+        <span class="muted">S{{ '%02d' % (e.season or 0) }}E{{ '%02d' % (e.episode or 0) }}</span>
+      {% else %}<span class="muted">movie</span>{% endif %}
+    </td>
+    <td>
+      {% if e.anilist_id %}
+        <a href="https://anilist.co/anime/{{ e.anilist_id }}" target="_blank" rel="noreferrer">
+          AniList {{ e.anilist_id }}</a>
+        {% if e.entry_episode %}<span class="muted">ep {{ e.entry_episode }}</span>{% endif %}
+      {% else %}<span class="muted">&mdash;</span>{% endif %}
+      {% if e.confidence %}<br><span class="tag tag-{{ e.confidence }}">{{ e.confidence }}</span>{% endif %}
+    </td>
+    <td><span class="tag tag-{{ e.status }}">{{ e.status }}</span>
+        <div class="small">{{ e.detail or '' }}</div></td>
+    <td><a href="/activity/{{ e.id }}">why?</a></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<div class="pager">
+  {% if page > 1 %}
+    <a href="/activity?page={{ page - 1 }}{% if status %}&status={{ status }}{% endif %}{% if q %}&q={{ q }}{% endif %}">&larr; newer</a>
+  {% endif %}
+  <span class="muted">page {{ page }}</span>
+  {% if events|length == per_page %}
+    <a href="/activity?page={{ page + 1 }}{% if status %}&status={{ status }}{% endif %}{% if q %}&q={{ q }}{% endif %}">older &rarr;</a>
+  {% endif %}
+</div>
+{% else %}
+<p class="muted">
+  No events yet. Watch something on the configured account, or run a reconcile
+  from the dashboard.
+</p>
+{% endif %}
+
+{% endblock %}

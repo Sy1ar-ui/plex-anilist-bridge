@@ -1,0 +1,5 @@
+{
+  "event": "media.pause",
+  "Account": { "id": 1, "title": "me" },
+  "Metadata": { "type": "episode", "ratingKey": "48291", "index": 14, "parentIndex": 2 }
+}
