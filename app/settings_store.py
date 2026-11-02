@@ -23,6 +23,10 @@ DEFAULTS: dict[str, Any] = {
     "set_dates": True,                # startedAt / completedAt on transitions
     "reconcile_interval_hours": 6,
     "reconcile_lookback_hours": 72,
+    # --- AniList outages and throttling ---------------------------------------
+    "anilist_retry_interval_minutes": 5,   # how often deferred events are retried
+    "anilist_retry_give_up_days": 7,       # stop retrying an event after this long
+    "anilist_max_wait_seconds": 120,       # longest a request queues on the rate limit
     # --- AniList -> MAL -----------------------------------------------------
     "mal_sync_enabled": False,
     "mal_poll_interval_minutes": 15,

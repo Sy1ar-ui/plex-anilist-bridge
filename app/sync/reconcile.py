@@ -161,6 +161,11 @@ async def run_reconcile(*, lookback_hours: int | None = None) -> ReconcileReport
         "INSERT INTO watermark (name, value) VALUES ('last_reconcile', datetime('now'))"
         " ON CONFLICT (name) DO UPDATE SET value = excluded.value"
     )
+    db.execute(
+        "INSERT INTO watermark (name, value) VALUES ('last_reconcile_summary', ?)"
+        " ON CONFLICT (name) DO UPDATE SET value = excluded.value",
+        (report.detail,),
+    )
     log.info("reconcile finished", extra={"summary": report.detail})
     return report
 

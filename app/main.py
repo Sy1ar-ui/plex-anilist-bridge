@@ -128,6 +128,17 @@ def create_app() -> FastAPI:
         if anilist.status == tokens.STATUS_BROKEN:
             problems.append("AniList token is broken")
 
+        from app.anilist.client import health as anilist_health
+        from app.anilist.client import limiter as anilist_limiter
+
+        limiter = anilist_limiter()
+        api = anilist_health().snapshot(limit=limiter.limit, remaining=limiter.remaining)
+        deferred = repo.deferred_count() if database_ok else 0
+        if api["state"] in ("down", "throttled"):
+            problems.append(f"AniList API {api['state']}: {api['last_error'] or api['summary']}")
+        if deferred:
+            problems.append(f"{deferred} event(s) deferred until AniList is available")
+
         body = {
             # The process being up is what a healthcheck should report; an
             # unfinished setup is not a crash, so it does not fail the check.
@@ -142,6 +153,20 @@ def create_app() -> FastAPI:
             },
             "events": repo.event_count(),
             "pending_review": repo.pending_review_count(),
+            "deferred": deferred,
+            # An AniList outage is reported, but does not fail the healthcheck:
+            # the container is fine, and restarting it would not help.
+            "anilist_api": {
+                key: api[key]
+                for key in (
+                    "state",
+                    "retry_at",
+                    "last_error",
+                    "last_success_at",
+                    "limit_per_minute",
+                    "throttles_last_10_min",
+                )
+            },
             "datasets": dataset_refresh.status(),
             "notes": problems,
         }

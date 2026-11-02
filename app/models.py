@@ -61,6 +61,22 @@ class WatchEvent:
             return title
         return f"{title} S{self.season or 0:02d}E{self.episode or 0:02d}"
 
+    def to_json(self) -> str:
+        """Everything needed to run this event through the pipeline again later."""
+        data = asdict(self)
+        data["received_at"] = self.received_at.isoformat()
+        data["viewed_at"] = self.viewed_at.isoformat() if self.viewed_at else None
+        return json.dumps(data)
+
+    @classmethod
+    def from_json(cls, raw: str) -> "WatchEvent":
+        data = json.loads(raw)
+        show = ShowIds(**(data.pop("show", None) or {}))
+        received = datetime.fromisoformat(data.pop("received_at"))
+        viewed_raw = data.pop("viewed_at", None)
+        viewed = datetime.fromisoformat(viewed_raw) if viewed_raw else None
+        return cls(show=show, received_at=received, viewed_at=viewed, **data)
+
 
 @dataclass
 class TraceStep:

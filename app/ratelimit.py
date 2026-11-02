@@ -22,6 +22,18 @@ log = logging.getLogger(__name__)
 WINDOW_SECONDS = 60.0
 
 
+class RateLimitWaitTooLong(Exception):
+    """The next free slot is further away than the caller is willing to wait."""
+
+    def __init__(self, wait_seconds: float, max_wait: float) -> None:
+        super().__init__(
+            f"next request slot is {wait_seconds:.0f}s away, "
+            f"more than the {max_wait:.0f}s this caller will wait"
+        )
+        self.wait_seconds = wait_seconds
+        self.max_wait = max_wait
+
+
 class RateLimiter:
     def __init__(
         self,
@@ -60,16 +72,36 @@ class RateLimiter:
             return 0.0
         return max(0.0, WINDOW_SECONDS - (now - self._sent[0]))
 
-    async def acquire(self) -> None:
-        """Block until a request may be sent, then record it."""
-        async with self._lock:
+    async def acquire(self, *, max_wait: float | None = None) -> None:
+        """Block until a request may be sent, then record it.
+
+        With ``max_wait``, raise :class:`RateLimitWaitTooLong` instead of
+        sleeping longer than that. This is what lets a long AniList throttle
+        defer an event instead of pinning a task (and the shared lock) for
+        minutes.
+        """
+        if max_wait is not None:
+            ahead = self.wait_time()
+            if ahead > max_wait:
+                raise RateLimitWaitTooLong(ahead, max_wait)
+            try:
+                await asyncio.wait_for(self._lock.acquire(), timeout=max(max_wait, 0.001))
+            except TimeoutError:
+                raise RateLimitWaitTooLong(max_wait, max_wait) from None
+        else:
+            await self._lock.acquire()
+        try:
             while True:
                 delay = self.wait_time()
                 if delay <= 0:
                     break
+                if max_wait is not None and delay > max_wait:
+                    raise RateLimitWaitTooLong(delay, max_wait)
                 log.debug("rate limit pause", extra={"api": self.name, "seconds": round(delay, 2)})
                 await self._sleep(delay)
             self._sent.append(self._clock())
+        finally:
+            self._lock.release()
 
     def observe(self, headers) -> None:
         """Adopt the limit the server reports, so we follow it rather than guess."""

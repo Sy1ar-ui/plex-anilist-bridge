@@ -23,7 +23,7 @@ fixes, deliberately:
 > **Status.** The Plex → AniList leg, the mapping engine, the activity log and
 > settings are implemented, with dry-run on by default. The review queue,
 > search-and-link UI, setup wizard with OAuth, and the AniList → MAL leg are the
-> next stages — see [Roadmap](#roadmap). **140 tests pass in CI** and the image
+> next stages — see [Roadmap](#roadmap). The suite passes in CI and the image
 > builds for amd64 and arm64, but nothing has yet been run against a real Plex
 > server; see [what is and is not verified](#what-is-and-is-not-verified).
 
@@ -204,6 +204,11 @@ Items that are uncertain or unmatched are held and counted on the dashboard. The
 queue UI for fixing them, including the visual episode-range editor, is the next
 stage of work.
 
+Events that matched but could not reach AniList are **deferred**, not failed —
+see [When AniList is down or throttled](#when-anilist-is-down-or-throttled).
+The Activity page filters by outcome with a count on each, and a failed or
+deferred event has a **Retry now** button on its page.
+
 ---
 
 ## Operational notes
@@ -217,7 +222,8 @@ stage of work.
   those fields are not even declared in the GraphQL mutation.
 - **Rate limits** are read from the APIs' own response headers rather than
   guessed. AniList is currently degraded to 30 requests/minute (90 normally);
-  `Retry-After` and `X-RateLimit-Reset` are honoured on a 429.
+  `Retry-After` and `X-RateLimit-Reset` are honoured on a 429. The dashboard
+  shows the live limit and flags it when it is below normal.
 - **Datasets** are cached in `/config/datasets` and in the database, refreshed
   daily with conditional GETs. If GitHub is unreachable the cached copy keeps
   working; a failed refresh never empties a working dataset. Your manual
@@ -226,6 +232,39 @@ stage of work.
 - **Logs** are structured JSON on stdout. `/health` is unauthenticated and backs
   the Docker `HEALTHCHECK`.
 - Runs as non-root (`PUID`/`PGID`) via `setpriv`.
+
+### When AniList is down or throttled
+
+AniList has had long outages and long stretches of reduced limits, so this is
+handled as a normal state rather than an error:
+
+- **Nothing is lost.** An event that matched but could not reach AniList is
+  marked **deferred**, keeps its match, and is retried by a background job
+  (every 5 minutes by default). Each event backs off on its own — 5 min, 10,
+  20, 40, then hourly — and is given up on after 7 days, after which it can
+  still be retried by hand. Retrying is safe because writes are absolute and
+  the current AniList state is re-read first.
+- **An outage is not hammered.** After three consecutive failures (5xx,
+  timeouts, connection errors, HTML error pages, "API temporarily disabled")
+  a circuit breaker pauses all AniList requests for 30 seconds, doubling each
+  time it re-opens, up to 15 minutes. New events are deferred immediately
+  instead of each sleeping through its own retries.
+- **Heavy throttling defers instead of blocking.** A request that would have to
+  wait longer than 120 seconds for a rate-limit slot (or is told to by a 429)
+  is deferred rather than holding up everything else.
+- **A bad token is not confused with an outage.** A 401 or "Invalid token"
+  marks the token broken, and deferred events wait for you to re-authorise; a
+  403 maintenance page or Cloudflare challenge does not touch the token.
+  Trying a new token on the settings page never marks the stored one broken.
+
+The dashboard's **AniList API** card shows the state (healthy, degraded,
+throttled, down), the last error, when requests resume, and the deferred
+backlog, with **Check AniList now** (one request, even while paused) and
+**Retry deferred now** buttons. A banner on every page says when AniList is
+down, throttling, or has rejected the token. All three thresholds are under
+*Settings → AniList outages and throttling*. `/health` reports the AniList
+state and backlog, but does not fail the container's healthcheck, because a
+restart would not help.
 
 ### On token storage, plainly
 

@@ -19,15 +19,41 @@
   read your account tokens. <a href="/settings#password">Set one now.</a>
 </div>
 {% endif %}
+{% if anilist.token_broken %}
+<div class="banner banner-down" role="alert">
+  <strong>The AniList token was rejected.</strong>
+  Events that need AniList are being held{% if anilist.deferred %} ({{ anilist.deferred }} so far){% endif %}
+  and will be retried after you
+  <a href="/settings#anilist">re-authorise</a>.
+</div>
+{% elif anilist.state == 'down' %}
+<div class="banner banner-down" role="alert">
+  <strong>AniList is not responding.</strong>
+  {% if anilist.deferred %}{{ anilist.deferred }} event(s) deferred &mdash; nothing is lost, they are retried automatically.
+  {% else %}New events will be deferred and retried automatically.{% endif %}
+  {% if anilist.retry_at %}Requests are paused; they resume {{ anilist.retry_at|ago }}.{% endif %}
+  <a href="/#anilist">Details</a>
+</div>
+{% elif anilist.state == 'throttled' %}
+<div class="banner banner-warn" role="status">
+  <strong>AniList is rate limiting this client.</strong>
+  Requests resume {{ anilist.retry_at|ago if anilist.retry_at else 'shortly' }}{% if anilist.deferred %};
+  {{ anilist.deferred }} event(s) are deferred until then{% endif %}.
+  <a href="/#anilist">Details</a>
+</div>
+{% endif %}
 
 <header class="topbar">
   <div class="brand"><a href="/">Plex &rarr; AniList Bridge</a></div>
   <nav>
-    <a href="/" {% if request.url.path == '/' %}class="here"{% endif %}>Dashboard</a>
-    <a href="/activity" {% if request.url.path.startswith('/activity') %}class="here"{% endif %}>Activity</a>
-    <a href="/settings" {% if request.url.path == '/settings' %}class="here"{% endif %}>Settings</a>
+    <a href="/" {% if request.url.path == '/' %}class="here" aria-current="page"{% endif %}>Dashboard</a>
+    <a href="/activity" {% if request.url.path.startswith('/activity') %}class="here" aria-current="page"{% endif %}>Activity</a>
+    <a href="/settings" {% if request.url.path == '/settings' %}class="here" aria-current="page"{% endif %}>Settings</a>
+    {% if anilist.deferred %}
+    <a href="/activity?status=deferred" class="pill pill-info" title="Waiting for AniList">{{ anilist.deferred }} deferred</a>
+    {% endif %}
     {% if pending_review %}
-    <a href="/activity?status=held" class="pill">{{ pending_review }} to review</a>
+    <a href="/activity?status=held" class="pill" title="Held or unmatched">{{ pending_review }} to review</a>
     {% endif %}
   </nav>
   {% if password_set %}
@@ -35,7 +61,7 @@
   {% endif %}
 </header>
 
-{% if notice %}<div class="notice">{{ notice }}</div>{% endif %}
+{% if notice %}<div class="notice notice-{{ notice_level }}" role="status">{{ notice }}</div>{% endif %}
 
 <main>
 {% block content %}{% endblock %}
