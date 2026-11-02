@@ -78,8 +78,9 @@ def record_event(
         cursor = conn.execute(
             "INSERT INTO event (source, received_at, viewed_at, plex_account_id,"
             " plex_rating_key, show_plex_guid, show_title, season, episode, media_kind,"
-            " status, confidence, anilist_id, entry_episode, detail, trace_json, dedupe_key)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            " status, confidence, anilist_id, entry_episode, detail, trace_json, dedupe_key,"
+            " input_json)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             " ON CONFLICT (dedupe_key) DO NOTHING",
             (
                 event.source,
@@ -99,6 +100,7 @@ def record_event(
                 detail,
                 match.trace_json() if match else None,
                 key,
+                event.to_json(),
             ),
         )
         if cursor.rowcount:
@@ -304,9 +306,13 @@ def finalise_event(
     anilist_id: int | None = None,
     entry_episode: int | None = None,
 ) -> None:
-    """Write the outcome of processing onto the event row."""
+    """Write the outcome of processing onto the event row.
+
+    Clears any scheduled retry: an event is only due again if
+    :func:`schedule_retry` is called after this.
+    """
     db.execute(
-        "UPDATE event SET status = ?, detail = ?,"
+        "UPDATE event SET status = ?, detail = ?, next_attempt_at = NULL,"
         " confidence = COALESCE(?, confidence),"
         " trace_json = COALESCE(?, trace_json),"
         " anilist_id = COALESCE(?, anilist_id),"
@@ -322,3 +328,131 @@ def finalise_event(
             event_id,
         ),
     )
+
+
+# --------------------------------------------------------------------------
+# deferred events (AniList unavailable) and retries
+# --------------------------------------------------------------------------
+STATUS_DEFERRED = "deferred"
+
+
+def _sql_time(moment: datetime) -> str:
+    """The format SQLite's datetime('now') uses, so the two compare as text."""
+    return moment.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def event_attempts(event_id: int) -> int:
+    row = db.query_one("SELECT attempts FROM event WHERE id = ?", (event_id,))
+    return int(row["attempts"] or 0) if row else 0
+
+
+def record_attempts(event_id: int, attempts: int) -> None:
+    db.execute("UPDATE event SET attempts = ? WHERE id = ?", (attempts, event_id))
+
+
+def schedule_retry(event_id: int, *, attempts: int, next_attempt_at: datetime) -> None:
+    db.execute(
+        "UPDATE event SET attempts = ?, next_attempt_at = ? WHERE id = ?",
+        (attempts, _sql_time(next_attempt_at), event_id),
+    )
+
+
+def due_deferred_events(*, limit: int = 25, ignore_schedule: bool = False) -> list[int]:
+    """Deferred events whose retry time has come, oldest first."""
+    if ignore_schedule:
+        rows = db.query(
+            "SELECT id FROM event WHERE status = ? ORDER BY id LIMIT ?",
+            (STATUS_DEFERRED, limit),
+        )
+    else:
+        rows = db.query(
+            "SELECT id FROM event WHERE status = ?"
+            " AND (next_attempt_at IS NULL OR next_attempt_at <= datetime('now'))"
+            " ORDER BY id LIMIT ?",
+            (STATUS_DEFERRED, limit),
+        )
+    return [int(r["id"]) for r in rows]
+
+
+def deferred_count() -> int:
+    return event_count(status=STATUS_DEFERRED)
+
+
+def next_deferred_attempt() -> str | None:
+    row = db.query_one(
+        "SELECT MIN(next_attempt_at) AS soonest FROM event WHERE status = ?",
+        (STATUS_DEFERRED,),
+    )
+    return row["soonest"] if row else None
+
+
+def event_input(event_id: int) -> WatchEvent | None:
+    """Rebuild the WatchEvent an event row was created from, for a retry.
+
+    Rows written since retries existed carry the exact input. Older rows are
+    rebuilt from their columns plus the show table, which holds the external
+    ids the enrichment step found.
+    """
+    row = db.query_one("SELECT * FROM event WHERE id = ?", (event_id,))
+    if row is None:
+        return None
+    if row["input_json"]:
+        try:
+            return WatchEvent.from_json(row["input_json"])
+        except (ValueError, TypeError, KeyError):
+            log.warning("stored event input unreadable; rebuilding", extra={"event_id": event_id})
+
+    show_row = None
+    if row["show_plex_guid"]:
+        show_row = db.query_one(
+            "SELECT * FROM show WHERE plex_guid = ?", (row["show_plex_guid"],)
+        )
+    show = ShowIds(
+        plex_guid=row["show_plex_guid"],
+        tvdb_id=show_row["tvdb_id"] if show_row else None,
+        tmdb_id=show_row["tmdb_id"] if show_row else None,
+        imdb_id=show_row["imdb_id"] if show_row else None,
+        title=row["show_title"] or (show_row["title"] if show_row else None),
+        year=show_row["year"] if show_row else None,
+    )
+
+    def parse(value: str | None) -> datetime | None:
+        if not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(value)
+        except ValueError:
+            return None
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+    return WatchEvent(
+        source=row["source"],
+        received_at=parse(row["received_at"]) or now(),
+        viewed_at=parse(row["viewed_at"]),
+        show=show,
+        media_kind=row["media_kind"] or "episode",
+        season=row["season"],
+        episode=row["episode"],
+        plex_account_id=row["plex_account_id"],
+        rating_key=row["plex_rating_key"],
+        show_rating_key=show_row["rating_key"] if show_row else None,
+    )
+
+
+def status_counts(*, since_hours: int | None = None) -> dict[str, int]:
+    """How many events ended in each status, optionally over a recent window."""
+    if since_hours:
+        rows = db.query(
+            "SELECT status, COUNT(*) AS n FROM event"
+            " WHERE received_at >= ? GROUP BY status",
+            (_iso_hours_ago(since_hours),),
+        )
+    else:
+        rows = db.query("SELECT status, COUNT(*) AS n FROM event GROUP BY status")
+    return {r["status"]: int(r["n"]) for r in rows}
+
+
+def _iso_hours_ago(hours: int) -> str:
+    from datetime import timedelta
+
+    return (now() - timedelta(hours=hours)).isoformat()

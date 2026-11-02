@@ -11,13 +11,31 @@
 </h1>
 
 <p>
-  <span class="tag tag-{{ event.status }}">{{ event.status }}</span>
+  <span class="tag tag-{{ event.status }}">{{ event.status|replace('_', ' ') }}</span>
   {% if event.confidence %}<span class="tag tag-{{ event.confidence }}">{{ event.confidence }}</span>{% endif %}
   <span class="tag">{{ event.source }}</span>
-  <span class="muted">{{ event.received_at }}</span>
+  <span class="muted">received {{ event.received_at|ago }}{% if event.viewed_at %} &middot; watched {{ event.viewed_at|ago }}{% endif %}</span>
 </p>
 
-<p class="detail">{{ event.detail or '' }}</p>
+<p class="detail detail-{{ event.status }}">{{ event.detail or '' }}</p>
+
+{% if retryable %}
+<div class="callout">
+  <p>
+    {% if event.status == 'deferred' %}
+      AniList could not be used when this was processed, so it is waiting rather than failed.
+      {% if event.next_attempt_at %}It will be retried automatically {{ event.next_attempt_at|ago }}.{% endif %}
+    {% else %}
+      This event failed. Retrying runs it through the pipeline again with the same input;
+      that is safe, because every AniList write is absolute and the current state is re-read first.
+    {% endif %}
+    {% if event.attempts %}<span class="muted">{{ event.attempts }} attempt(s) so far.</span>{% endif %}
+  </p>
+  <form method="post" action="/activity/{{ event.id }}/retry">
+    <button>Retry now</button>
+  </form>
+</div>
+{% endif %}
 
 <section class="panel">
   <h2>Why it matched this way</h2>

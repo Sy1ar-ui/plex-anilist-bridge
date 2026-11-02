@@ -13,12 +13,13 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from app import settings_store
 from app.datasets import refresh as dataset_refresh
-from app.sync import reconcile
+from app.sync import reconcile, retry
 
 log = logging.getLogger(__name__)
 
 JOB_DATASETS = "dataset_refresh"
 JOB_RECONCILE = "plex_reconcile"
+JOB_ANILIST_RETRY = "anilist_retry"
 
 _scheduler: AsyncIOScheduler | None = None
 
@@ -35,6 +36,20 @@ async def _reconcile_job() -> None:
         await reconcile.run_reconcile()
     except Exception:  # noqa: BLE001
         log.exception("reconcile job failed")
+
+
+async def _anilist_retry_job() -> None:
+    try:
+        await retry.retry_deferred()
+    except Exception:  # noqa: BLE001
+        log.exception("deferred retry job failed")
+
+
+def _minutes(settings: dict, key: str, default: int, *, low: int = 1, high: int = 1440) -> int:
+    try:
+        return max(low, min(high, int(settings.get(key, default))))
+    except (TypeError, ValueError):
+        return default
 
 
 def start() -> AsyncIOScheduler:
@@ -61,6 +76,14 @@ def start() -> AsyncIOScheduler:
         max_instances=1,
         coalesce=True,
     )
+    scheduler.add_job(
+        _anilist_retry_job,
+        IntervalTrigger(minutes=_minutes(settings, "anilist_retry_interval_minutes", 5)),
+        id=JOB_ANILIST_RETRY,
+        name="Retry events deferred by AniList outages",
+        max_instances=1,
+        coalesce=True,
+    )
 
     scheduler.start()
     _scheduler = scheduler
@@ -79,6 +102,10 @@ def apply_settings() -> None:
     _reschedule(
         JOB_RECONCILE, hours=max(1, int(settings.get("reconcile_interval_hours", 6)))
     )
+    _reschedule(
+        JOB_ANILIST_RETRY,
+        minutes=_minutes(settings, "anilist_retry_interval_minutes", 5),
+    )
 
 
 def _reschedule(job_id: str, **interval) -> None:
@@ -89,6 +116,10 @@ def _reschedule(job_id: str, **interval) -> None:
         log.info("job rescheduled", extra={"job": job_id, **interval})
     except Exception:  # noqa: BLE001
         log.warning("could not reschedule job", extra={"job": job_id})
+
+
+def is_running() -> bool:
+    return _scheduler is not None
 
 
 def run_now(job_id: str) -> bool:

@@ -19,6 +19,16 @@ from app.models import ShowIds, WatchEvent
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
+@pytest.fixture(autouse=True)
+def fresh_anilist_health():
+    """The circuit breaker is process-wide; no test may inherit another's outage."""
+    from app.anilist.health import health
+
+    health().reset()
+    yield health()
+    health().reset()
+
+
 @pytest.fixture
 def temp_db(tmp_path):
     db.set_db_path(tmp_path / "test.db")

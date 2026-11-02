@@ -10,21 +10,32 @@ Order matters here and is load-bearing:
 5. planning, which is where never-decrease lives;
 6. the write gate, which is where dry-run lives.
 
+If AniList is down, throttling hard, or the token needs re-authorising, the
+event is **deferred** rather than failed: it keeps its place, and the retry
+job (:mod:`app.sync.retry`) runs it through this same function again once
+AniList is back. That is safe because every write is absolute.
+
 Nothing writes to Plex, ever.
 """
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 
 from app import repo, settings_store
-from app.anilist.client import AniListAuthError, AniListClient, AniListError
+from app.anilist.client import (
+    AniListAuthError,
+    AniListClient,
+    AniListError,
+    AniListUnavailable,
+)
 from app.anilist.rules import RuleSettings, plan_anilist_write
 from app.mapping import engine
 from app.mapping.titles import clean_title, season_variants, title_candidates
 from app.models import Candidate, MatchResult, TraceStep, WatchEvent
 from app.plex.client import PlexClient, PlexUnavailable
-from app.sync.writegate import WriteGate
+from app.sync.writegate import RESULT_DEFERRED, WriteGate
 
 log = logging.getLogger(__name__)
 
@@ -37,6 +48,11 @@ STATUS_UNMATCHED = "unmatched"
 STATUS_SKIPPED = "skipped"
 STATUS_ERROR = "error"
 STATUS_DUPLICATE = "duplicate"
+STATUS_DEFERRED = repo.STATUS_DEFERRED
+
+# Deferred events back off per event: 5 min, 10, 20, 40, then hourly.
+RETRY_BASE = timedelta(minutes=5)
+RETRY_CAP = timedelta(hours=1)
 
 _TERMINAL = {
     STATUS_WRITTEN,
@@ -57,20 +73,33 @@ class EventResult:
     match: MatchResult | None = None
 
 
+def retry_delay(attempts: int) -> timedelta:
+    return min(RETRY_BASE * (2 ** max(0, attempts - 1)), RETRY_CAP)
+
+
 async def handle_watch_event(
     event: WatchEvent,
     *,
     plex: PlexClient | None = None,
     anilist: AniListClient | None = None,
     gate: WriteGate | None = None,
+    event_id: int | None = None,
 ) -> EventResult:
+    """Run one event through the pipeline.
+
+    ``event_id`` is given when retrying an event that already has a row; the
+    row is updated in place rather than looked up by its dedupe key.
+    """
     settings = settings_store.all_settings()
     gate = gate or WriteGate()
 
-    stored = repo.record_event(
-        event, status=STATUS_RECEIVED, match=None, detail=f"received via {event.source}"
-    )
-    if not stored.is_new:
+    if event_id is not None:
+        stored = repo.StoredEvent(event_id, False)
+    else:
+        stored = repo.record_event(
+            event, status=STATUS_RECEIVED, match=None, detail=f"received via {event.source}"
+        )
+    if not stored.is_new and event_id is None:
         previous = repo.event_status(stored.id)
         if previous in _TERMINAL:
             detail = f"already handled ({previous}); nothing written again"
@@ -80,6 +109,42 @@ async def handle_watch_event(
     def finish(status: str, detail: str, match: MatchResult | None = None, **kw) -> EventResult:
         repo.finalise_event(stored.id, status=status, detail=detail, match=match, **kw)
         return EventResult(stored.id, status, detail, stored.is_new, match)
+
+    def defer(exc: AniListError, match: MatchResult | None = None, **kw) -> EventResult:
+        """Park the event until AniList is usable again, or give up if it is old."""
+        attempts = repo.event_attempts(stored.id) + 1
+        now = datetime.now(UTC)
+        give_up_days = _int_setting(settings, "anilist_retry_give_up_days", 7)
+        received = event.received_at
+        if received.tzinfo is None:
+            received = received.replace(tzinfo=UTC)
+        waiting_for = (
+            "AniList re-authorisation" if isinstance(exc, AniListAuthError) else "AniList"
+        )
+
+        if now - received > timedelta(days=give_up_days):
+            result = finish(
+                STATUS_ERROR,
+                f"gave up after {attempts} attempt(s) over {give_up_days} day(s) "
+                f"waiting for {waiting_for}: {exc}. Use Retry on this event to try again.",
+                match,
+                **kw,
+            )
+            repo.record_attempts(stored.id, attempts)
+            return result
+
+        when = now + retry_delay(attempts)
+        retry_at = getattr(exc, "retry_at", None)
+        if retry_at:
+            when = max(when, datetime.fromtimestamp(retry_at, UTC))
+        detail = f"deferred (attempt {attempts}), waiting for {waiting_for}: {exc}"
+        result = finish(STATUS_DEFERRED, detail, match, **kw)
+        repo.schedule_retry(stored.id, attempts=attempts, next_attempt_at=when)
+        log.warning(
+            "event deferred",
+            extra={"event_id": stored.id, "attempts": attempts, "error": str(exc)},
+        )
+        return result
 
     if not settings.get("sync_enabled", True):
         return finish(STATUS_SKIPPED, "syncing is turned off in settings")
@@ -105,7 +170,15 @@ async def handle_watch_event(
     match = engine.resolve(event)
 
     if match.confidence == "unmatched" and anilist is not None:
-        match = await _title_search_fallback(anilist, event, match)
+        try:
+            match = await _title_search_fallback(anilist, event, match)
+        except (AniListUnavailable, AniListAuthError) as exc:
+            # Without the search this would land as "unmatched", which is
+            # wrong: it might well match once AniList answers.
+            match.steps.append(
+                TraceStep("title-search", "skipped", f"AniList unavailable: {exc}")
+            )
+            return defer(exc, match)
 
     if match.confidence == "unmatched" or match.candidate is None:
         return finish(STATUS_UNMATCHED, match.summary, match)
@@ -133,10 +206,21 @@ async def handle_watch_event(
     # ---- remote state ----------------------------------------------------
     try:
         state, media = await anilist.media_with_entry(candidate.anilist_id)
-    except AniListAuthError as exc:
-        return finish(STATUS_ERROR, f"AniList authentication failed: {exc}", match)
+    except (AniListUnavailable, AniListAuthError) as exc:
+        return defer(
+            exc,
+            match,
+            anilist_id=candidate.anilist_id,
+            entry_episode=candidate.entry_episode,
+        )
     except AniListError as exc:
-        return finish(STATUS_ERROR, f"could not read AniList: {exc}", match)
+        return finish(
+            STATUS_ERROR,
+            f"could not read AniList: {exc}",
+            match,
+            anilist_id=candidate.anilist_id,
+            entry_episode=candidate.entry_episode,
+        )
 
     repo.cache_media(media)
 
@@ -188,6 +272,13 @@ async def handle_watch_event(
 
     # ---- the write -------------------------------------------------------
     outcome = await gate.anilist_save(anilist, plan.diff, event_id=stored.id)
+    if outcome.result == RESULT_DEFERRED and outcome.error is not None:
+        return defer(
+            outcome.error,
+            match,
+            anilist_id=candidate.anilist_id,
+            entry_episode=candidate.entry_episode,
+        )
     if outcome.result == "error":
         return finish(
             STATUS_ERROR,
@@ -208,6 +299,13 @@ async def handle_watch_event(
         anilist_id=candidate.anilist_id,
         entry_episode=candidate.entry_episode,
     )
+
+
+def _int_setting(settings: dict, key: str, default: int) -> int:
+    try:
+        return max(1, int(settings.get(key, default)))
+    except (TypeError, ValueError):
+        return default
 
 
 async def _season_counts(plex: PlexClient, show_rating_key: str):
@@ -242,6 +340,8 @@ async def _title_search_fallback(
     for term in searches:
         try:
             results = await anilist.search(term, per_page=10)
+        except (AniListUnavailable, AniListAuthError):
+            raise  # the caller defers the whole event
         except AniListError as exc:
             match.steps.append(
                 TraceStep("title-search", "skipped", f"AniList search failed: {exc}")

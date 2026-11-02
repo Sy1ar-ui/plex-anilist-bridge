@@ -12,7 +12,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from app import repo, settings_store
-from app.anilist.client import AniListClient, AniListError
+from app.anilist.client import (
+    AniListAuthError,
+    AniListClient,
+    AniListError,
+    AniListUnavailable,
+)
 from app.models import WriteDiff
 
 log = logging.getLogger(__name__)
@@ -23,6 +28,9 @@ TARGET_MAL = "mal"
 RESULT_OK = "ok"
 RESULT_DRY_RUN = "dry_run"
 RESULT_ERROR = "error"
+# AniList was unreachable or the token needs re-authorising. Nothing was
+# written; the event is retried later. Safe because every write is absolute.
+RESULT_DEFERRED = "deferred"
 
 
 @dataclass
@@ -31,6 +39,7 @@ class WriteOutcome:
     detail: str
     dry_run: bool
     response: dict[str, Any] | None = None
+    error: AniListError | None = None
 
     @property
     def ok(self) -> bool:
@@ -78,6 +87,25 @@ class WriteGate:
 
         try:
             response = await client.save_entry(diff.variables)
+        except (AniListUnavailable, AniListAuthError) as exc:
+            repo.log_write(
+                event_id=event_id,
+                target=TARGET_ANILIST,
+                dry_run=False,
+                operation="SaveMediaListEntry",
+                request=diff.variables,
+                before=diff.before,
+                after=diff.after,
+                result=RESULT_DEFERRED,
+                error=str(exc),
+            )
+            log.warning(
+                "anilist write deferred",
+                extra={"anilist_id": diff.anilist_id, "error": str(exc)},
+            )
+            return WriteOutcome(
+                RESULT_DEFERRED, f"AniList write deferred: {exc}", False, error=exc
+            )
         except AniListError as exc:
             repo.log_write(
                 event_id=event_id,
@@ -94,7 +122,7 @@ class WriteGate:
                 "anilist write failed",
                 extra={"anilist_id": diff.anilist_id, "error": str(exc)},
             )
-            return WriteOutcome(RESULT_ERROR, f"AniList write failed: {exc}", False)
+            return WriteOutcome(RESULT_ERROR, f"AniList write failed: {exc}", False, error=exc)
 
         repo.log_write(
             event_id=event_id,
