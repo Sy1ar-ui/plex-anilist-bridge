@@ -325,6 +325,17 @@ class AniListClient:
         data = await self._post(queries.SAVE_ENTRY, variables)
         return data.get("SaveMediaListEntry") or {}
 
+    async def save_rated_completion(self, variables: dict[str, Any]) -> dict[str, Any]:
+        """Complete a title the user rated in the UI. The only write with a score."""
+        allowed = {"mediaId", "status", "progress", "scoreRaw", "completedAt"}
+        extra = set(variables) - allowed
+        if extra:
+            raise AniListError(f"refusing to write {sorted(extra)} with a rating")
+        if variables.get("status") != "COMPLETED":
+            raise AniListError("a rating is only ever written together with COMPLETED")
+        data = await self._post(queries.SAVE_RATED_COMPLETION, variables)
+        return data.get("SaveMediaListEntry") or {}
+
     async def recent_list_changes(
         self, user_id: int, *, page: int = 1, per_page: int = 50
     ) -> tuple[list[dict[str, Any]], bool]:

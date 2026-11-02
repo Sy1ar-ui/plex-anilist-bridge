@@ -8,6 +8,7 @@ so the UI can show the real payload rather than a paraphrase.
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -63,17 +64,46 @@ class WriteGate:
         *,
         event_id: int | None,
     ) -> WriteOutcome:
-        if self.dry_run:
+        """An automatic write from the pipeline. Never carries a score."""
+        return await self._anilist_write(
+            "SaveMediaListEntry", client.save_entry, diff, event_id=event_id
+        )
+
+    async def anilist_rated_completion(
+        self,
+        client: AniListClient,
+        diff: WriteDiff,
+        *,
+        event_id: int | None,
+    ) -> WriteOutcome:
+        """Complete a title the user rated in the UI. Dry run applies here too."""
+        return await self._anilist_write(
+            "SaveMediaListEntry (rated completion)", client.save_rated_completion, diff, event_id=event_id
+        )
+
+    async def _anilist_write(
+        self,
+        operation: str,
+        send: Callable[[dict[str, Any]], Awaitable[dict[str, Any]]],
+        diff: WriteDiff,
+        *,
+        event_id: int | None,
+    ) -> WriteOutcome:
+        def record(result: str, *, dry_run: bool, error: str | None = None) -> None:
             repo.log_write(
                 event_id=event_id,
                 target=TARGET_ANILIST,
-                dry_run=True,
-                operation="SaveMediaListEntry",
+                dry_run=dry_run,
+                operation=operation,
                 request=diff.variables,
                 before=diff.before,
                 after=diff.after,
-                result=RESULT_DRY_RUN,
+                result=result,
+                error=error,
             )
+
+        if self.dry_run:
+            record(RESULT_DRY_RUN, dry_run=True)
             detail = f"dry run: would have written {_describe(diff)}"
             log.info(
                 "dry run write",
@@ -86,19 +116,9 @@ class WriteGate:
             return WriteOutcome(RESULT_DRY_RUN, detail, True)
 
         try:
-            response = await client.save_entry(diff.variables)
+            response = await send(diff.variables)
         except (AniListUnavailable, AniListAuthError) as exc:
-            repo.log_write(
-                event_id=event_id,
-                target=TARGET_ANILIST,
-                dry_run=False,
-                operation="SaveMediaListEntry",
-                request=diff.variables,
-                before=diff.before,
-                after=diff.after,
-                result=RESULT_DEFERRED,
-                error=str(exc),
-            )
+            record(RESULT_DEFERRED, dry_run=False, error=str(exc))
             log.warning(
                 "anilist write deferred",
                 extra={"anilist_id": diff.anilist_id, "error": str(exc)},
@@ -107,33 +127,14 @@ class WriteGate:
                 RESULT_DEFERRED, f"AniList write deferred: {exc}", False, error=exc
             )
         except AniListError as exc:
-            repo.log_write(
-                event_id=event_id,
-                target=TARGET_ANILIST,
-                dry_run=False,
-                operation="SaveMediaListEntry",
-                request=diff.variables,
-                before=diff.before,
-                after=diff.after,
-                result=RESULT_ERROR,
-                error=str(exc),
-            )
+            record(RESULT_ERROR, dry_run=False, error=str(exc))
             log.error(
                 "anilist write failed",
                 extra={"anilist_id": diff.anilist_id, "error": str(exc)},
             )
             return WriteOutcome(RESULT_ERROR, f"AniList write failed: {exc}", False, error=exc)
 
-        repo.log_write(
-            event_id=event_id,
-            target=TARGET_ANILIST,
-            dry_run=False,
-            operation="SaveMediaListEntry",
-            request=diff.variables,
-            before=diff.before,
-            after=diff.after,
-            result=RESULT_OK,
-        )
+        record(RESULT_OK, dry_run=False)
         detail = f"wrote {_describe(diff)}"
         log.info(
             "anilist write",
@@ -150,6 +151,11 @@ def _describe(diff: WriteDiff) -> str:
         bits.append(f"progress {progress}")
     if status:
         bits.append(f"status {status}")
+    if "scoreRaw" in diff.variables:
+        bits.append(f"rating {diff.variables['scoreRaw'] / 10:g}/10")
+    if "completedAt" in diff.variables:
+        day = diff.variables["completedAt"]
+        bits.append(f"completed {day['year']:04d}-{day['month']:02d}-{day['day']:02d}")
     if "repeat" in diff.variables:
         bits.append(f"rewatch count {diff.variables['repeat']}")
     return f"AniList {diff.anilist_id}: " + ", ".join(bits) if bits else f"AniList {diff.anilist_id}"

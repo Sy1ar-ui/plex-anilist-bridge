@@ -1,10 +1,12 @@
-"""Server-rendered UI: dashboard, settings, activity log.
+"""Server-rendered UI: dashboard, activity log, system status, settings.
 
 No build chain, no CDN: Jinja templates and one stylesheet, so the container
-works on a LAN with no internet access. The review queue, search-and-link and
-the visual range editor come next; everything here is what is needed to
-configure the bridge, watch it work in dry-run, and see -- and recover from --
-AniList being down or throttled.
+works on a LAN with no internet access.
+
+The dashboard is for what needs you (setup, titles waiting for a rating) and
+what just happened; the System page holds the machinery (AniList API health,
+datasets, scheduled jobs, the webhook URL). The review queue, search-and-link
+and the visual range editor come next.
 """
 from __future__ import annotations
 
@@ -30,7 +32,7 @@ from app.anilist.client import limiter as anilist_limiter
 from app.datasets import refresh as dataset_refresh
 from app.plex import client as plex_client
 from app.plex.client import PlexClient, PlexUnavailable
-from app.sync import reconcile, retry
+from app.sync import completion, reconcile, retry
 from app.web import timefmt
 
 log = logging.getLogger(__name__)
@@ -45,6 +47,7 @@ timefmt.register(templates.env)
 EVENT_STATUSES = [
     "written",
     "would_write",
+    "awaiting_rating",
     "no_change",
     "deferred",
     "held",
@@ -73,6 +76,7 @@ def anilist_status() -> dict[str, Any]:
     snap["token_status"] = token.status
     snap["token_broken"] = token.status == tokens.STATUS_BROKEN
     snap["deferred"] = repo.deferred_count()
+    snap["queued_ratings"] = completion.queued_count()
     snap["next_retry"] = repo.next_deferred_attempt()
     snap["retry_running"] = retry.is_running()
     snap["retry_blocked"] = retry.blocked_reason()
@@ -98,6 +102,7 @@ def _base_context(request: Request, **extra: Any) -> dict[str, Any]:
         "dry_run": settings_store.is_dry_run(),
         "password_set": auth.password_is_set(),
         "pending_review": repo.pending_review_count(),
+        "to_rate": completion.open_count(),
         "app_version": config.APP_VERSION,
         "anilist": anilist_status(),
         "notice_level": level if level in ("info", "ok", "error") else "info",
@@ -152,11 +157,10 @@ async def dashboard(
     _: None = Depends(require_session),
     notice: str | None = None,
 ) -> HTMLResponse:
-    from app import scheduler
-
+    """What needs you, and what just happened. The machinery is on /system."""
     server = plex_client.stored_server()
     account_row = db.query_one("SELECT id, name FROM plex_account LIMIT 1")
-    enabled = db.query("SELECT section_id, title FROM library WHERE enabled = 1")
+    enabled = db.query("SELECT section_id FROM library WHERE enabled = 1 LIMIT 1")
     token_status = tokens.all_statuses()
     datasets = dataset_refresh.status()
     last_webhook = _watermark("last_webhook")
@@ -173,8 +177,39 @@ async def dashboard(
         {"label": "Set an admin password", "done": auth.password_is_set(),
          "href": "/settings#password"},
         {"label": "Add the webhook in Plex", "done": last_webhook is not None,
-         "href": "#webhook"},
+         "href": "#setup-webhook"},
     ]
+
+    context = _base_context(
+        request,
+        plex_configured=server is not None,
+        plex_account=dict(account_row) if account_row else None,
+        last_webhook=last_webhook,
+        datasets=datasets,
+        datasets_ok=bool(datasets) and all(d.get("status") == "ok" for d in datasets),
+        day_counts=repo.status_counts(since_hours=24),
+        recent=repo.recent_events(limit=10),
+        ratings=completion.list_open(),
+        webhook_url=_webhook_url(request),
+        setup_steps=setup_steps,
+        setup_remaining=sum(1 for step in setup_steps if not step["done"]),
+        notice=notice,
+    )
+    return templates.TemplateResponse(request, "dashboard.html", context)
+
+
+@router.get("/system", response_class=HTMLResponse)
+async def system_page(
+    request: Request,
+    _: None = Depends(require_session),
+    notice: str | None = None,
+) -> HTMLResponse:
+    """AniList API health, connections, datasets, jobs and the webhook URL."""
+    from app import scheduler
+
+    server = plex_client.stored_server()
+    account_row = db.query_one("SELECT id, name FROM plex_account LIMIT 1")
+    enabled = db.query("SELECT section_id, title FROM library WHERE enabled = 1")
 
     context = _base_context(
         request,
@@ -182,29 +217,56 @@ async def dashboard(
         plex_base_url=server[0] if server else None,
         plex_account=dict(account_row) if account_row else None,
         enabled_libraries=[dict(r) for r in enabled],
-        token_status=token_status,
-        last_webhook=last_webhook,
+        token_status=tokens.all_statuses(),
+        last_webhook=_watermark("last_webhook"),
         last_reconcile=reconcile.last_run_at(),
         last_reconcile_summary=_watermark("last_reconcile_summary"),
         last_retry=_watermark("last_anilist_retry"),
         last_retry_summary=_watermark("last_anilist_retry_summary"),
-        datasets=datasets,
-        datasets_ok=bool(datasets) and all(d.get("status") == "ok" for d in datasets),
+        datasets=dataset_refresh.status(),
         counters={
             "accepted": db.get_counter("webhook_accepted"),
             "dropped_other_accounts": db.get_counter("foreign_event_dropped"),
             "ignored": db.get_counter("webhook_ignored_event_type"),
         },
         event_total=repo.event_count(),
-        day_counts=repo.status_counts(since_hours=24),
-        recent=repo.recent_events(limit=8),
         webhook_url=_webhook_url(request),
         jobs=scheduler.job_states(),
-        setup_steps=setup_steps,
-        setup_remaining=sum(1 for step in setup_steps if not step["done"]),
         notice=notice,
     )
-    return templates.TemplateResponse(request, "dashboard.html", context)
+    return templates.TemplateResponse(request, "system.html", context)
+
+
+# --------------------------------------------------------------------------
+# rating a finished series
+# --------------------------------------------------------------------------
+@router.post("/ratings/{pending_id}")
+async def rate_series(
+    pending_id: int,
+    _: None = Depends(require_session),
+    action: str = Form("rate"),
+    score: str = Form(""),
+):
+    """Rate and complete, complete without a rating, or stop waiting."""
+    if action == "dismiss":
+        outcome = completion.dismiss(pending_id)
+        return _redirect("/#rate", outcome.detail, "ok" if outcome.ok else "error")
+
+    value: float | None = None
+    if action != "no_rating":
+        try:
+            value = completion.parse_score(score)
+        except ValueError as exc:
+            return _redirect("/#rate", f"Not saved: {exc}.", "error")
+
+    outcome = await completion.submit(pending_id, value)
+    if not outcome.ok:
+        level = "error"
+    elif outcome.status == completion.QUEUED:
+        level = "info"
+    else:
+        level = "ok"
+    return _redirect("/#rate", outcome.detail, level)
 
 
 def _watermark(name: str) -> str | None:
@@ -369,11 +431,11 @@ async def save_anilist_token(
         last_error=None,
     )
     message = f"Connected to AniList as {viewer.get('name')}."
-    deferred = repo.deferred_count()
-    if deferred:
-        # Events deferred while the old token was broken can go now.
+    waiting = repo.deferred_count() + completion.queued_count()
+    if waiting:
+        # Work deferred while the old token was broken can go now.
         _spawn(retry.retry_deferred(force=True))
-        message += f" Retrying {deferred} deferred event(s) in the background."
+        message += f" Retrying {waiting} waiting item(s) in the background."
     return _redirect("/settings#anilist", message, "ok")
 
 
@@ -400,6 +462,7 @@ async def save_behaviour(request: Request, _: None = Depends(require_session)):
             "skip_specials": flag("skip_specials"),
             "add_untracked": flag("add_untracked"),
             "set_dates": flag("set_dates"),
+            "rate_before_complete": flag("rate_before_complete"),
             "uncertain_action": (
                 "apply_and_flag"
                 if form.get("uncertain_action") == "apply_and_flag"
@@ -455,7 +518,7 @@ async def action_refresh_datasets(_: None = Depends(require_session)):
     results = await dataset_refresh.refresh_all(force=True)
     detail = "; ".join(f"{r.name}: {r.status} ({r.detail})" for r in results)
     level = "error" if any(r.status == "error" for r in results) else "ok"
-    return _redirect("/", detail, level)
+    return _redirect("/system#datasets", detail, level)
 
 
 @router.post("/actions/reconcile")
@@ -469,13 +532,13 @@ async def action_reconcile(_: None = Depends(require_session)):
 
     if scheduler.run_now(scheduler.JOB_RECONCILE):
         return _redirect(
-            "/",
+            "/system#jobs",
             "Reconcile started in the background. Results appear in Activity as "
             "they are processed, and the summary on this page when it finishes.",
             "ok",
         )
     report = await reconcile.run_reconcile()
-    return _redirect("/", report.detail or report.summary())
+    return _redirect("/system#jobs", report.detail or report.summary())
 
 
 @router.post("/actions/check-anilist")
@@ -484,22 +547,22 @@ async def action_check_anilist(_: None = Depends(require_session)):
     try:
         client = AniListClient.from_db(max_wait=15.0, max_attempts=1, respect_circuit=False)
     except AniListAuthError as exc:
-        return _redirect("/", f"AniList check: {exc}", "error")
+        return _redirect("/system#anilist", f"AniList check: {exc}", "error")
     try:
         viewer = await client.viewer()
     except AniListUnavailable as exc:
-        return _redirect("/", f"AniList is still unavailable: {exc}", "error")
+        return _redirect("/system#anilist", f"AniList is still unavailable: {exc}", "error")
     except (AniListAuthError, AniListError) as exc:
-        return _redirect("/", f"AniList check failed: {exc}", "error")
+        return _redirect("/system#anilist", f"AniList check failed: {exc}", "error")
     finally:
         await client.__aexit__(None, None, None)
 
-    deferred = repo.deferred_count()
+    waiting = repo.deferred_count() + completion.queued_count()
     message = f"AniList is responding (signed in as {viewer.get('name')})."
-    if deferred:
+    if waiting:
         _spawn(retry.retry_deferred(force=True))
-        message += f" Retrying {deferred} deferred event(s) in the background."
-    return _redirect("/", message, "ok")
+        message += f" Retrying {waiting} waiting item(s) in the background."
+    return _redirect("/system#anilist", message, "ok")
 
 
 @router.post("/actions/retry-deferred")
@@ -512,13 +575,13 @@ async def action_retry_deferred(
     reason = retry.blocked_reason()
     if reason:
         return _redirect(back, f"Not retrying yet: {reason}.", "error")
-    count = repo.deferred_count()
+    count = repo.deferred_count() + completion.queued_count()
     if not count:
         return _redirect(back, "There are no deferred events to retry.")
     _spawn(retry.retry_deferred(force=True))
     return _redirect(
         back,
-        f"Retrying up to {min(count, retry.BATCH_SIZE)} of {count} deferred event(s) "
+        f"Retrying up to {min(count, retry.BATCH_SIZE)} of {count} waiting item(s) "
         "in the background. Refresh to see progress.",
         "ok",
     )
@@ -604,6 +667,11 @@ async def activity_detail(
             trace=trace,
             writes=writes,
             retryable=event.get("status") in retry.RETRYABLE,
+            pending_rating=(
+                completion.open_for(int(event["anilist_id"]))
+                if event.get("status") == "awaiting_rating" and event.get("anilist_id")
+                else None
+            ),
             notice=notice,
         ),
     )

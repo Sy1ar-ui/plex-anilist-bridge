@@ -19,6 +19,17 @@
 
 <p class="detail detail-{{ event.status }}">{{ event.detail or '' }}</p>
 
+{% if pending_rating %}
+<div class="callout">
+  <p>
+    This finished the series. AniList is held at
+    {{ pending_rating.total_episodes - 1 }}/{{ pending_rating.total_episodes }} until you rate it;
+    the completion will be dated {{ pending_rating.completed_on|day }}.
+  </p>
+  <a href="/#rate">Rate it &rarr;</a>
+</div>
+{% endif %}
+
 {% if retryable %}
 <div class="callout">
   <p>
@@ -84,11 +95,15 @@
         <span class="muted">{{ w.operation }} &middot; {{ w.at }}</span>
       </p>
       {% if w.error %}<p class="bad">{{ w.error }}</p>{% endif %}
-      <div class="cols">
-        <div><h4>Request</h4><pre>{{ w.request_json }}</pre></div>
-        <div><h4>Before</h4><pre>{{ w.before_json }}</pre></div>
-        <div><h4>After</h4><pre>{{ w.after_json }}</pre></div>
-      </div>
+      <h4>Request</h4>
+      <pre>{{ w.request_json }}</pre>
+      <details class="before-after">
+        <summary class="small">Before and after</summary>
+        <div class="cols">
+          <div><h4>Before</h4><pre>{{ w.before_json }}</pre></div>
+          <div><h4>After</h4><pre>{{ w.after_json }}</pre></div>
+        </div>
+      </details>
     </div>
     {% endfor %}
   {% else %}

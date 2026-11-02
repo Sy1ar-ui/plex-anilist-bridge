@@ -53,8 +53,8 @@ query ($mediaId: Int!) {
 """
 
 # Every argument is optional: omitting a variable leaves the field untouched.
-# Score and notes are deliberately not arguments here, so no code path can
-# write them even by accident.
+# Score and notes are deliberately not arguments here, so no automatic code
+# path can write them even by accident.
 SAVE_ENTRY = """
 mutation (
   $mediaId: Int,
@@ -76,6 +76,33 @@ mutation (
     status
     progress
     repeat
+    media { id episodes title { romaji english } }
+  }
+}
+"""
+
+# Completing a title the user has rated in the UI. The only document that can
+# carry a score, and it has no notes argument. scoreRaw is on a 100-point
+# scale whatever score format the user has chosen on AniList.
+SAVE_RATED_COMPLETION = """
+mutation (
+  $mediaId: Int,
+  $status: MediaListStatus,
+  $progress: Int,
+  $scoreRaw: Int,
+  $completedAt: FuzzyDateInput
+) {
+  SaveMediaListEntry(
+    mediaId: $mediaId,
+    status: $status,
+    progress: $progress,
+    scoreRaw: $scoreRaw,
+    completedAt: $completedAt
+  ) {
+    id
+    status
+    progress
+    score(format: POINT_10_DECIMAL)
     media { id episodes title { romaji english } }
   }
 }

@@ -61,6 +61,7 @@ def settings(temp_db):
             "uncertain_action": "hold",
             "rewatch_action": "ignore",
             "set_dates": True,
+            "rate_before_complete": True,
         }
     )
     return settings_store
@@ -167,6 +168,10 @@ class FakeAniList:
         return self.state, self.media
 
     async def save_entry(self, variables: dict):
+        self.saved.append(dict(variables))
+        return {"id": 1, **variables}
+
+    async def save_rated_completion(self, variables: dict):
         self.saved.append(dict(variables))
         return {"id": 1, **variables}
 

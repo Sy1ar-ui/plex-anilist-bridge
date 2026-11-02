@@ -21,6 +21,7 @@ DEFAULTS: dict[str, Any] = {
     "uncertain_action": "hold",       # hold | apply_and_flag
     "rewatch_action": "ignore",       # ignore | repeating
     "set_dates": True,                # startedAt / completedAt on transitions
+    "rate_before_complete": True,     # hold the final episode until rated in the UI
     "reconcile_interval_hours": 6,
     "reconcile_lookback_hours": 72,
     # --- AniList outages and throttling ---------------------------------------
