@@ -3,7 +3,7 @@
 services:
   plex-anilist-bridge:
     build: .
-    image: ghcr.io/sy1ar-ui/plex-anilist-bridge:0.3.0
+    image: ghcr.io/sy1ar-ui/plex-anilist-bridge:0.4.0
     container_name: plex-anilist-bridge
     restart: unless-stopped
     ports:

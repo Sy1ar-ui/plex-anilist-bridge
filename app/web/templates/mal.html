@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}MyAnimeList &middot; Plex AniList Bridge{% endblock %}
+{% block content %}
+
+{% set labels = {'status': 'status', 'is_rewatching': 'rewatching', 'num_watched_episodes': 'episodes',
+                 'score': 'score', 'num_times_rewatched': 'times rewatched',
+                 'start_date': 'started', 'finish_date': 'finished'} %}
+{% macro changes(item) -%}
+  <ul class="field-changes">
+    {% for key, value in item.after.items() if not (key == 'is_rewatching' and not value and not item.before) %}
+    <li><span class="muted">{{ labels.get(key, key) }}</span>
+      {% if item.before %}<span class="old">{{ item.before.get(key) if item.before.get(key) is not none else '–' }}</span> &rarr;{% endif %}
+      <strong>{{ value|replace('_', ' ') if value is string else value }}</strong></li>
+    {% endfor %}
+  </ul>
+{%- endmacro %}
+
+<div class="page-head">
+  <h1>MyAnimeList</h1>
+  <p class="muted">A one-way mirror of AniList. Nothing is ever deleted from MyAnimeList,
+    notes and tags are never written, and progress is only lowered when you approve it below.</p>
+</div>
+
+<section class="panel">
+  <div class="card-head">
+    <h2>Mirror</h2>
+    {% if blocked %}<span class="badge badge-warn">Off</span>{% else %}<span class="badge badge-ok">On</span>{% endif %}
+  </div>
+  {% if blocked %}
+    <p>{{ blocked|capitalize }}.
+      {% if 'settings' in blocked %}<a href="/settings#mal">Turn it on in Settings</a>.
+      {% elif 'MyAnimeList' in blocked %}<a href="/setup/mal">Connect MyAnimeList</a>.
+      {% elif 'AniList' in blocked %}<a href="/setup/anilist">Connect AniList</a>.{% endif %}</p>
+  {% else %}
+    <p>AniList changes are mirrored every few minutes{% if sync_score %}, with scores{% endif %}{% if sync_dates %} and dates{% endif %}.
+      {% if dry_run %}<strong>Dry run is on</strong>, so each change is recorded below but not sent.{% endif %}</p>
+  {% endif %}
+  <dl class="facts">
+    <dt>Last run</dt><dd>{{ last_poll|ago }}{% if last_poll_summary %} <span class="muted">&middot; {{ last_poll_summary }}</span>{% endif %}</dd>
+    <dt>Account</dt><dd>{% if mal_token.present %}{{ mal_token.account_name or 'connected' }}{% if mal_token.expires_at %} <span class="muted small">renewed automatically while the mirror runs; valid until {{ mal_token.expires_at|day }}</span>{% endif %}{% else %}<span class="muted">not connected</span>{% endif %}</dd>
+  </dl>
+  <form method="post" action="/mal/poll">
+    <button class="secondary" {% if blocked or running %}disabled{% endif %}>Mirror recent changes now</button>
+  </form>
+</section>
+
+<section class="panel" id="preview">
+  <h2>Full reconcile</h2>
+  {% if not plan %}
+    <p>Compares your whole AniList list with your whole MyAnimeList list and shows every difference.
+       Nothing is written until you tick what to change and apply it. Use this once when you turn
+       the mirror on, and any time the two drift apart.</p>
+    <form method="post" action="/mal/reconcile">
+      <button {% if not mal_token.present %}disabled title="Connect MyAnimeList first"{% endif %}>Build preview</button>
+    </form>
+  {% else %}
+    {% set s = plan.summary %}
+    <p class="muted">Built {{ plan.created_at|ago }} &middot; {{ s.get('same', 0) }} already match.
+      {% if plan.age_hours and plan.age_hours > 24 %}<span class="warn">This preview is over a day old; rebuild it before applying.</span>{% endif %}</p>
+    <form method="post" action="/mal/reconcile/{{ plan.id }}/apply" id="plan-form">
+      {% for kind, title, hint in [
+          ('add', 'Add to MyAnimeList', 'On AniList, not on MyAnimeList.'),
+          ('update', 'Update on MyAnimeList', 'MyAnimeList is behind or different.'),
+          ('lower', 'Would lower MyAnimeList', 'MyAnimeList is ahead. Not ticked: tick only the ones where AniList is right.')] %}
+      {% set rows = plan_items[kind] %}
+      {% if rows %}
+      <details class="plan-group plan-{{ kind }}" {% if kind != 'add' or rows|length <= 30 %}open{% endif %}>
+        <summary><strong>{{ title }}</strong> <span class="tag">{{ rows|length }}</span>
+          <span class="muted small">{{ hint }}</span></summary>
+        <label class="check small select-all"><input type="checkbox" data-group="{{ kind }}"
+          {% if kind != 'lower' %}checked{% endif %}> all</label>
+        <ul class="plan-items">
+          {% for item in rows %}
+          <li>
+            <label class="check">
+              <input type="checkbox" name="item" value="{{ item.id }}" data-kind="{{ kind }}"
+                     {% if item.decision == 'approved' %}checked{% endif %}
+                     {% if item.decision in ('applied', 'would_write') %}disabled{% endif %}>
+              <span>
+                <a href="https://myanimelist.net/anime/{{ item.mal_id }}" target="_blank" rel="noreferrer">{{ item.title }}</a>
+                {% if item.decision in ('applied', 'would_write', 'error') %}<span class="tag tag-{{ 'error' if item.decision == 'error' else 'written' }}">{{ item.decision|replace('_', ' ') }}</span>{% endif %}
+                {{ changes(item) }}
+              </span>
+            </label>
+          </li>
+          {% endfor %}
+        </ul>
+      </details>
+      {% endif %}
+      {% endfor %}
+
+      {% if plan_items.add or plan_items.update or plan_items.lower %}
+      <div class="button-row">
+        <button>{% if dry_run %}Apply ticked (dry run){% else %}Apply ticked{% endif %}</button>
+        <button class="secondary" formaction="/mal/reconcile/{{ plan.id }}/discard" formnovalidate>Discard preview</button>
+      </div>
+      {% else %}
+      <p class="ok">Nothing to change: the lists match.</p>
+      <button class="secondary" formaction="/mal/reconcile/{{ plan.id }}/discard">Close</button>
+      {% endif %}
+    </form>
+
+    {% if plan_items.unmapped or plan_items.only_on_mal %}
+    <details class="plan-group">
+      <summary><strong>Not mirrored</strong>
+        <span class="tag">{{ plan_items.unmapped|length + plan_items.only_on_mal|length }}</span>
+        <span class="muted small">For information; nothing here is changed.</span></summary>
+      {% if plan_items.unmapped %}
+      <h4>On AniList without a MyAnimeList id ({{ plan_items.unmapped|length }})</h4>
+      <p class="small">{% for item in plan_items.unmapped %}<a href="https://anilist.co/anime/{{ item.anilist_id }}" target="_blank" rel="noreferrer">{{ item.title }}</a>{{ ', ' if not loop.last }}{% endfor %}</p>
+      {% endif %}
+      {% if plan_items.only_on_mal %}
+      <h4>Only on MyAnimeList ({{ plan_items.only_on_mal|length }}) &mdash; never deleted</h4>
+      <p class="small">{% for item in plan_items.only_on_mal %}<a href="https://myanimelist.net/anime/{{ item.mal_id }}" target="_blank" rel="noreferrer">{{ item.title }}</a>{{ ', ' if not loop.last }}{% endfor %}</p>
+      {% endif %}
+    </details>
+    {% endif %}
+  {% endif %}
+</section>
+
+<section class="panel" id="log">
+  <h2>Recent</h2>
+  {% if log_rows %}
+  <div class="table-wrap">
+  <table class="log compact">
+    <tbody>
+    {% for r in log_rows %}
+    <tr class="row-{{ r.outcome }}">
+      <td class="nowrap muted small">{{ r.at|ago }}</td>
+      <td><strong>{{ r.title or ('MyAnimeList ' ~ r.mal_id) }}</strong>
+        <div class="small clamp" title="{{ r.detail }}">{{ r.detail }}</div></td>
+      <td class="nowrap"><span class="tag tag-{{ r.outcome }}">{{ r.outcome|replace('_', ' ') }}</span>
+        {% if r.source == 'reconcile' %}<span class="tag">reconcile</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="muted">Nothing mirrored yet.</p>
+  {% endif %}
+</section>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // "all" ticks or unticks every item in its group.
+  document.querySelectorAll('input[data-group]').forEach(function (box) {
+    box.addEventListener('change', function () {
+      document.querySelectorAll('input[data-kind="' + box.dataset.group + '"]:not(:disabled)')
+        .forEach(function (item) { item.checked = box.checked; });
+    });
+  });
+</script>
+{% endblock %}

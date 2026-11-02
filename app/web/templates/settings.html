@@ -11,6 +11,7 @@
   <a href="#plex">Plex</a>
   <a href="#anilist">AniList</a>
   <a href="#behaviour">Sync</a>
+  <a href="#mal">MyAnimeList</a>
   <a href="#advanced">Advanced</a>
   <a href="#password">Password</a>
 </nav>
@@ -154,6 +155,28 @@
         Progress is never lowered. Notes are never written, and a score only ever
         comes from a rating you enter here.
       </p>
+    </fieldset>
+
+    <fieldset id="mal">
+      <legend>MyAnimeList</legend>
+      <label class="check">
+        <input type="checkbox" name="mal_sync_enabled" {% if settings.mal_sync_enabled %}checked{% endif %}>
+        Mirror AniList to MyAnimeList
+      </label>
+      <small class="indent">One way only. Needs MyAnimeList <a href="/setup/mal">connected</a>.
+        After turning it on, run the <a href="/mal#preview">full reconcile</a> once to bring existing entries across.</small>
+      <label class="check">
+        <input type="checkbox" name="mal_sync_score" {% if settings.mal_sync_score %}checked{% endif %}>
+        Copy scores (AniList&rsquo;s score out of 100 becomes 1&ndash;10; an unscored entry never clears MyAnimeList&rsquo;s)
+      </label>
+      <label class="check">
+        <input type="checkbox" name="mal_sync_dates" {% if settings.mal_sync_dates %}checked{% endif %}>
+        Copy start and finish dates
+      </label>
+      <label>Check AniList for changes every
+        <input type="number" name="mal_poll_interval_minutes" min="5" max="1440"
+               value="{{ settings.mal_poll_interval_minutes }}"> minutes
+      </label>
     </fieldset>
 
     <details class="advanced" id="advanced">

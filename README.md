@@ -20,10 +20,10 @@ fixes, deliberately:
 | Config sprawl | Six environment variables, all optional. Everything else is in the UI. |
 | Title matching | Matching is by **ID** (TVDB/TMDB/IMDb → AniList), not by comparing title strings. |
 
-> **Status.** The Plex → AniList leg, the mapping engine, the activity log,
-> the review queue, the setup wizard (Plex sign-in, AniList and MAL OAuth) and
-> settings are implemented, with dry-run on by default. The AniList → MAL leg is
-> the next stage — see [Roadmap](#roadmap). The suite passes in CI and the image
+> **Status.** Everything on the [roadmap](#roadmap) except Sonarr is
+> implemented: the Plex → AniList leg, the mapping engine, the activity log, the
+> review queue, the setup wizard, and the AniList → MyAnimeList mirror with its
+> full-reconcile preview. Dry-run is on by default. The suite passes in CI and the image
 > builds for amd64 and arm64, but nothing has yet been run against a real Plex
 > server, AniList or MyAnimeList; see [what is and is not verified](#what-is-and-is-not-verified).
 
@@ -155,8 +155,8 @@ nothing needs a restart.
    redirect URL the wizard shows, enter its id and secret, and **Sign in with
    AniList**. The token is checked against AniList before it is stored. AniList
    tokens last a year.
-6. **MyAnimeList** (optional) — the same, with MAL's own client page. The MAL
-   sync is not built yet, so this can wait.
+6. **MyAnimeList** (optional) — the same, with MAL's own client page. Only
+   needed for the [MyAnimeList mirror](#mirroring-to-myanimelist).
 7. **Plex webhook** — paste the URL into Plex; the page notices when the first
    webhook arrives.
 
@@ -269,6 +269,47 @@ still says the 2nd.
   the event's page but not sent.
 - Only a first completion of a finished-airing series is held. Rewatches and
   still-airing shows behave as before.
+
+## Mirroring to MyAnimeList
+
+AniList is the source of truth; MyAnimeList is a one-way mirror of it. Turn it
+on under *Settings → Sync → MyAnimeList* (it needs MAL connected in setup).
+
+**The mirror** checks AniList every 15 minutes (configurable) for list entries
+changed since its last run, and updates the matching MAL entries. Titles are
+matched by the MAL id AniList itself stores, so there is no guessing. It is
+careful in the same ways the Plex leg is:
+
+- **Progress is never lowered** on MAL, and a MAL entry is never moved off
+  *completed*, automatically. Those are held back and listed, for the full
+  reconcile.
+- **Nothing is deleted** from MAL, and **comments and tags are never written**.
+- Only the fields that differ are sent. Scores are copied unless turned off
+  (AniList's 0–100 becomes 1–10, rounding half up; an unscored AniList entry
+  never clears a MAL score). Start and finish dates are copied only if you turn
+  that on.
+- Status maps across directly; an AniList rewatch (REPEATING) is MAL's
+  *completed* with *rewatching* set.
+- Dry-run applies. It keeps its own place in the change list, so changes made
+  while dry-run is on are still mirrored once it is turned off.
+- If MAL is down or rate limiting, the run stops and the next one carries on
+  from the same place. MAL tokens last about a month and are refreshed
+  automatically.
+
+The mirror's first run starts from "now". To bring existing entries across,
+use **the full reconcile** on the **MyAnimeList** page (linked from System). It
+reads both whole lists and shows every difference before anything is written:
+
+| Group | Ticked by default |
+|---|---|
+| Add to MyAnimeList | yes |
+| Update on MyAnimeList | yes |
+| Would lower MyAnimeList (MAL is ahead) | **no** — tick only where AniList is right |
+| No MyAnimeList id on AniList | shown only |
+| Only on MyAnimeList | shown only; never deleted |
+
+**Apply ticked** writes just those, through the same dry-run gate. If MAL fails
+part-way, the rest stay ticked for another try.
 
 ---
 
@@ -393,10 +434,10 @@ they disagree. Bump all four in the PR, merge it, then tag **the merge commit
 on `main`**:
 
 ```bash
-git tag -a v0.3.0 -m "Release 0.3.0" && git push origin v0.3.0
+git tag -a v0.4.0 -m "Release 0.4.0" && git push origin v0.4.0
 ```
 
-The tag push is what publishes `ghcr.io/sy1ar-ui/plex-anilist-bridge:0.3.0`.
+The tag push is what publishes `ghcr.io/sy1ar-ui/plex-anilist-bridge:0.4.0`.
 Until it is pushed, the compose file and template on `main` name a tag that
 does not exist yet.
 
@@ -408,6 +449,7 @@ app/
   datasets/     dataset download, parsing and caching
   plex/         webhook parsing, account filter, Plex server client
   anilist/      GraphQL client, queries, the update rules
+  mal/          MyAnimeList client, mirror rules, poller, full reconcile
   sync/         pipeline, write gate, reconcile
   web/          routes and templates
   migrations/   numbered SQL, applied at startup
@@ -422,7 +464,7 @@ tests/          fixtures and the suite
 - [x] Plex → AniList in dry-run, activity log, settings page
 - [x] Review queue, search-and-link, visual episode-range editor
 - [x] Setup wizard, Plex PIN link flow, AniList + MAL OAuth
-- [ ] AniList → MAL leg with the full-reconcile preview
+- [x] AniList → MAL leg with the full-reconcile preview
 - [ ] Sonarr as an optional ID source
 
 ---
