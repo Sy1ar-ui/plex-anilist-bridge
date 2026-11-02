@@ -348,6 +348,23 @@ class AniListClient:
         return list(block.get("mediaList") or []), bool(info.get("hasNextPage"))
 
 
+    async def list_collection(self, user_id: int, *, per_chunk: int = 500, max_chunks: int = 40) -> list[dict[str, Any]]:
+        """Every entry on the user's anime list, once each (custom lists repeat entries)."""
+        entries: dict[int, dict[str, Any]] = {}
+        for chunk in range(1, max_chunks + 1):
+            data = await self._post(
+                queries.LIST_COLLECTION, {"userId": user_id, "chunk": chunk, "perChunk": per_chunk}
+            )
+            block = data.get("MediaListCollection") or {}
+            for group in block.get("lists") or []:
+                for entry in group.get("entries") or []:
+                    if entry.get("id") is not None:
+                        entries[int(entry["id"])] = entry
+            if not block.get("hasNextChunk"):
+                break
+        return list(entries.values())
+
+
 def _decode(response: httpx.Response) -> tuple[dict[str, Any] | None, str]:
     """The JSON body if there is one, and the raw text either way."""
     try:

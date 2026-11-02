@@ -29,5 +29,5 @@ DB_PATH = CONFIG_DIR / "bridge.db"
 DATASET_CACHE_DIR = CONFIG_DIR / "datasets"
 
 APP_NAME = "plex-anilist-bridge"
-APP_VERSION = "0.3.0"
+APP_VERSION = "0.4.0"
 USER_AGENT = f"{APP_NAME}/{APP_VERSION} (+https://github.com/Sy1ar-ui/plex-anilist-bridge)"

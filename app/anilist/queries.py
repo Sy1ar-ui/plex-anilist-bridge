@@ -151,3 +151,31 @@ query ($userId: Int!, $page: Int, $perPage: Int) {
   }
 }
 """
+
+# The whole anime list, for the full AniList -> MAL reconcile. Chunked: AniList
+# caps a chunk at 500 entries.
+LIST_COLLECTION = """
+query ($userId: Int!, $chunk: Int, $perChunk: Int) {
+  MediaListCollection(userId: $userId, type: ANIME, chunk: $chunk, perChunk: $perChunk) {
+    hasNextChunk
+    lists {
+      entries {
+        id
+        status
+        progress
+        repeat
+        updatedAt
+        score(format: POINT_100)
+        startedAt { year month day }
+        completedAt { year month day }
+        media {
+          id
+          idMal
+          episodes
+          title { romaji english }
+        }
+      }
+    }
+  }
+}
+"""

@@ -1,6 +1,6 @@
 [project]
 name = "plex-anilist-bridge"
-version = "0.3.0"
+version = "0.4.0"
 description = "Self-hosted Plex -> AniList -> MyAnimeList sync bridge with an explain-everything web UI"
 requires-python = ">=3.12"
 license = { text = "GPL-3.0-or-later" }

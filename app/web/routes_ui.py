@@ -222,9 +222,18 @@ async def system_page(
         event_total=repo.event_count(),
         webhook_url=_webhook_url(request),
         jobs=scheduler.job_states(),
+        mal_blocked=_mal_blocked(),
+        mal_last_poll=_watermark("mal_last_poll"),
+        mal_last_summary=_watermark("mal_last_poll_summary"),
         notice=notice,
     )
     return templates.TemplateResponse(request, "system.html", context)
+
+
+def _mal_blocked() -> str | None:
+    from app.mal import sync as mal_sync
+
+    return mal_sync.blocked_reason()
 
 
 # --------------------------------------------------------------------------
@@ -445,6 +454,10 @@ async def save_behaviour(request: Request, _: None = Depends(require_session)):
             "add_untracked": flag("add_untracked"),
             "set_dates": flag("set_dates"),
             "rate_before_complete": flag("rate_before_complete"),
+            "mal_sync_enabled": flag("mal_sync_enabled"),
+            "mal_sync_score": flag("mal_sync_score"),
+            "mal_sync_dates": flag("mal_sync_dates"),
+            "mal_poll_interval_minutes": number("mal_poll_interval_minutes", 15, low=5, high=1440),
             "uncertain_action": (
                 "apply_and_flag"
                 if form.get("uncertain_action") == "apply_and_flag"

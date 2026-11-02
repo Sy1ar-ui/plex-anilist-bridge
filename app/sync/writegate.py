@@ -81,6 +81,32 @@ class WriteGate:
             "SaveMediaListEntry (rated completion)", client.save_rated_completion, diff, event_id=event_id
         )
 
+    async def mal_save(
+        self,
+        client,
+        mal_id: int,
+        fields: dict[str, Any],
+        *,
+        before: dict[str, Any] | None,
+        after: dict[str, Any],
+        event_id: int | None = None,
+    ) -> WriteOutcome:
+        """Mirror one entry to MyAnimeList. Dry run applies exactly as for AniList."""
+        from app.mal.client import MALAuthError, MALError, MALUnavailable
+
+        diff = WriteDiff(anilist_id=mal_id, variables=dict(fields), before=before or {}, after=after,
+                         reason="")
+        return await self._write(
+            TARGET_MAL,
+            "PATCH my_list_status",
+            lambda variables: client.update(mal_id, variables),
+            diff,
+            event_id=event_id,
+            label=f"MyAnimeList {mal_id}",
+            deferrable=(MALUnavailable, MALAuthError),
+            failure=MALError,
+        )
+
     async def _anilist_write(
         self,
         operation: str,
@@ -89,10 +115,29 @@ class WriteGate:
         *,
         event_id: int | None,
     ) -> WriteOutcome:
+        return await self._write(
+            TARGET_ANILIST, operation, send, diff, event_id=event_id,
+            label=f"AniList {diff.anilist_id}",
+            deferrable=(AniListUnavailable, AniListAuthError),
+            failure=AniListError,
+        )
+
+    async def _write(
+        self,
+        target: str,
+        operation: str,
+        send: Callable[[dict[str, Any]], Awaitable[dict[str, Any]]],
+        diff: WriteDiff,
+        *,
+        event_id: int | None,
+        label: str,
+        deferrable: tuple[type[Exception], ...],
+        failure: type[Exception],
+    ) -> WriteOutcome:
         def record(result: str, *, dry_run: bool, error: str | None = None) -> None:
             repo.log_write(
                 event_id=event_id,
-                target=TARGET_ANILIST,
+                target=target,
                 dry_run=dry_run,
                 operation=operation,
                 request=diff.variables,
@@ -104,46 +149,28 @@ class WriteGate:
 
         if self.dry_run:
             record(RESULT_DRY_RUN, dry_run=True)
-            detail = f"dry run: would have written {_describe(diff)}"
-            log.info(
-                "dry run write",
-                extra={
-                    "target": TARGET_ANILIST,
-                    "anilist_id": diff.anilist_id,
-                    "variables": diff.variables,
-                },
-            )
-            return WriteOutcome(RESULT_DRY_RUN, detail, True)
+            log.info("dry run write", extra={"target": target, "id": diff.anilist_id,
+                                             "variables": diff.variables})
+            return WriteOutcome(RESULT_DRY_RUN, f"dry run: would have written {_describe(diff, label)}", True)
 
+        name = "AniList" if target == TARGET_ANILIST else "MyAnimeList"
         try:
             response = await send(diff.variables)
-        except (AniListUnavailable, AniListAuthError) as exc:
+        except deferrable as exc:
             record(RESULT_DEFERRED, dry_run=False, error=str(exc))
-            log.warning(
-                "anilist write deferred",
-                extra={"anilist_id": diff.anilist_id, "error": str(exc)},
-            )
-            return WriteOutcome(
-                RESULT_DEFERRED, f"AniList write deferred: {exc}", False, error=exc
-            )
-        except AniListError as exc:
+            log.warning("write deferred", extra={"target": target, "id": diff.anilist_id, "error": str(exc)})
+            return WriteOutcome(RESULT_DEFERRED, f"{name} write deferred: {exc}", False, error=exc)
+        except failure as exc:
             record(RESULT_ERROR, dry_run=False, error=str(exc))
-            log.error(
-                "anilist write failed",
-                extra={"anilist_id": diff.anilist_id, "error": str(exc)},
-            )
-            return WriteOutcome(RESULT_ERROR, f"AniList write failed: {exc}", False, error=exc)
+            log.error("write failed", extra={"target": target, "id": diff.anilist_id, "error": str(exc)})
+            return WriteOutcome(RESULT_ERROR, f"{name} write failed: {exc}", False, error=exc)
 
         record(RESULT_OK, dry_run=False)
-        detail = f"wrote {_describe(diff)}"
-        log.info(
-            "anilist write",
-            extra={"anilist_id": diff.anilist_id, "variables": diff.variables},
-        )
-        return WriteOutcome(RESULT_OK, detail, False, response)
+        log.info("write", extra={"target": target, "id": diff.anilist_id, "variables": diff.variables})
+        return WriteOutcome(RESULT_OK, f"wrote {_describe(diff, label)}", False, response)
 
 
-def _describe(diff: WriteDiff) -> str:
+def _describe(diff: WriteDiff, label: str | None = None) -> str:
     status = diff.variables.get("status")
     progress = diff.variables.get("progress")
     bits = []
@@ -158,4 +185,9 @@ def _describe(diff: WriteDiff) -> str:
         bits.append(f"completed {day['year']:04d}-{day['month']:02d}-{day['day']:02d}")
     if "repeat" in diff.variables:
         bits.append(f"rewatch count {diff.variables['repeat']}")
-    return f"AniList {diff.anilist_id}: " + ", ".join(bits) if bits else f"AniList {diff.anilist_id}"
+    if "num_watched_episodes" in diff.variables:
+        bits.append(f"episodes {diff.variables['num_watched_episodes']}")
+    if "score" in diff.variables:
+        bits.append(f"score {diff.variables['score']}")
+    label = label or f"AniList {diff.anilist_id}"
+    return f"{label}: " + ", ".join(bits) if bits else label

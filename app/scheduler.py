@@ -20,6 +20,7 @@ log = logging.getLogger(__name__)
 JOB_DATASETS = "dataset_refresh"
 JOB_RECONCILE = "plex_reconcile"
 JOB_ANILIST_RETRY = "anilist_retry"
+JOB_MAL = "mal_mirror"
 
 _scheduler: AsyncIOScheduler | None = None
 
@@ -43,6 +44,18 @@ async def _anilist_retry_job() -> None:
         await retry.retry_deferred()
     except Exception:  # noqa: BLE001
         log.exception("deferred retry job failed")
+
+
+async def _mal_job() -> None:
+    from app.mal import sync as mal_sync
+
+    # Turned off, or not connected: say nothing, every few minutes, forever.
+    if mal_sync.blocked_reason():
+        return
+    try:
+        await mal_sync.poll()
+    except Exception:  # noqa: BLE001
+        log.exception("MAL mirror job failed")
 
 
 def _minutes(settings: dict, key: str, default: int, *, low: int = 1, high: int = 1440) -> int:
@@ -85,6 +98,15 @@ def start() -> AsyncIOScheduler:
         coalesce=True,
     )
 
+    scheduler.add_job(
+        _mal_job,
+        IntervalTrigger(minutes=_minutes(settings, "mal_poll_interval_minutes", 15, low=5)),
+        id=JOB_MAL,
+        name="Mirror AniList to MyAnimeList",
+        max_instances=1,
+        coalesce=True,
+    )
+
     scheduler.start()
     _scheduler = scheduler
     log.info("scheduler started", extra={"jobs": [j.id for j in scheduler.get_jobs()]})
@@ -106,6 +128,7 @@ def apply_settings() -> None:
         JOB_ANILIST_RETRY,
         minutes=_minutes(settings, "anilist_retry_interval_minutes", 5),
     )
+    _reschedule(JOB_MAL, minutes=_minutes(settings, "mal_poll_interval_minutes", 15, low=5))
 
 
 def _reschedule(job_id: str, **interval) -> None:

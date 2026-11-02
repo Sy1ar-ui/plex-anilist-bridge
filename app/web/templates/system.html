@@ -116,6 +116,13 @@
     </dl>
   </div>
 
+  <div class="card" id="mal">
+    <h3>MyAnimeList mirror</h3>
+    <p>{% if mal_blocked %}<span class="muted">{{ mal_blocked|capitalize }}.</span>{% else %}<span class="ok">On</span>{% endif %}</p>
+    <p class="small">Last run {{ mal_last_poll|ago }}{% if mal_last_summary %}<br><span class="muted">{{ mal_last_summary }}</span>{% endif %}</p>
+    <a class="button secondary" href="/mal">Open</a>
+  </div>
+
   <div class="card" id="datasets">
     <h3>Mapping datasets</h3>
     {% if datasets %}
