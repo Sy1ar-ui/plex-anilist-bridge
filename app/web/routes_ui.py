@@ -334,6 +334,7 @@ async def _render_settings(
         libraries=libraries,
         enabled_sections=enabled,
         chosen_account=int(account_row["id"]) if account_row else None,
+        webhook_alias=plex_client.webhook_account_alias(),
         token_status=tokens.all_statuses(),
         notifications=_recent_notifications(),
         sonarr=_sonarr_status(),

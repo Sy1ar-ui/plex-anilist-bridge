@@ -77,16 +77,41 @@ def event_of(payload: dict[str, Any]) -> str:
     return value if isinstance(value, str) else ""
 
 
-def is_own_account(payload: dict[str, Any], configured_account_id: int | None) -> bool:
+def is_own_account(
+    payload: dict[str, Any], configured_account_id: int | None, alias: int | None = None
+) -> bool:
     """True only when this event belongs to the configured account.
 
-    If no account has been configured yet nothing is accepted, because
-    accepting everything on a shared server is the exact failure this guards
-    against.
+    ``alias`` is a second id the user has confirmed as theirs (see
+    ``plex.client`` on the webhook account id). If no account has been
+    configured yet nothing is accepted, because accepting everything on a
+    shared server is the exact failure this guards against.
     """
     if configured_account_id is None:
         return False
-    return account_id_of(payload) == configured_account_id
+    seen = account_id_of(payload)
+    return seen is not None and seen in {configured_account_id, alias}
+
+
+def evidence_it_is_mine(
+    payload: dict[str, Any], own_names: set[str], configured_account_id: int | None
+) -> list[str]:
+    """Why a dropped event looks like the chosen account's own, if it does.
+
+    Reads two things only: whether ``Account.title`` is one of the chosen
+    account's names, and Plex's ``user``/``owner`` flags, which Plex sets
+    together when the server owner triggers the event (counted only when the
+    owner is the chosen account). Nothing about the event is kept; the caller
+    keeps at most the id, and only when this returns a reason.
+    """
+    reasons = []
+    account = payload.get("Account")
+    title = account.get("title") if isinstance(account, dict) else None
+    if isinstance(title, str) and title.strip().lower() in own_names:
+        reasons.append("name")
+    if configured_account_id == 1 and payload.get("owner") is True and payload.get("user") is True:
+        reasons.append("owner")
+    return reasons
 
 
 def _as_int(value: Any) -> int | None:

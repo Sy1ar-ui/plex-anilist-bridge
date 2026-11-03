@@ -94,8 +94,16 @@ async def plex_webhook_endpoint(
     # It runs for every event type, so another user's play/pause/stop leaves
     # exactly what their scrobble does: one counter, nothing else.
     configured = plex_client.configured_account_id()
-    if not plex_webhook.is_own_account(payload, configured):
+    if not plex_webhook.is_own_account(payload, configured, plex_client.webhook_account_alias()):
         db.bump_counter(COUNTER_FOREIGN)
+        # If it plainly is the chosen account under another id, remember
+        # that id -- and only the id -- so the user can confirm it.
+        seen = plex_webhook.account_id_of(payload)
+        reasons = plex_webhook.evidence_it_is_mine(payload, plex_client.own_names(), configured)
+        if seen is not None and reasons:
+            plex_client.note_webhook_account_candidate(seen, reasons)
+            log.info("event dropped: looks like the configured account under id %s", seen)
+            return JSONResponse({"status": "ignored", "reason": "other account"})
         # Note what is NOT logged: no title, no show, no episode, no account
         # name. Another user's viewing is not this application's business.
         log.info("event dropped: not the configured account")

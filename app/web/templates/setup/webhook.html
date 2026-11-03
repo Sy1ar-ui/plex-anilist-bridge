@@ -10,6 +10,20 @@
 </p>
 
 {% if not last_webhook %}
+{% if candidate %}
+<div id="webhook-candidate" class="callout tone-warn" role="alert" data-candidate="{{ candidate.id }}">
+  {{ icon('key') }}
+  <p><strong>These look like yours.</strong> {{ candidate.seen }} event(s)
+     {% if 'name' in candidate.reasons %}from an account named {{ account_name }}{% else %}that Plex marked as the server owner&rsquo;s own{% endif %}
+     arrived with account id <code>{{ candidate.id }}</code>, not the id the server lists for {{ account_name }}, so they
+     were dropped. If that was you, count this id as yours.</p>
+  <form method="post" action="/setup/webhook/adopt">
+    <input type="hidden" name="account_id" value="{{ candidate.id }}">
+    <button>That was me</button>
+  </form>
+</div>
+{% endif %}
+
 <div id="webhook-other-server" class="callout tone-warn" role="status" {% if not other_server %}hidden{% endif %}>
   {{ icon('server') }}
   <p><strong>Plex is reaching the bridge</strong>, but <span id="webhook-other-server-count">{{ other_server }}</span>
@@ -18,7 +32,7 @@
      <a href="/setup/plex">connect the server you watch on</a>.</p>
 </div>
 
-<div id="webhook-foreign" class="callout tone-info" role="status" {% if not foreign %}hidden{% endif %}>
+<div id="webhook-foreign" class="callout tone-info" role="status" {% if not foreign or candidate %}hidden{% endif %}>
   {{ icon('info') }}
   <p><strong>Plex is reaching the bridge.</strong> <span id="webhook-foreign-count">{{ foreign }}</span>
      event(s) from other accounts on {{ server_name }} were dropped, as they should be: other people
@@ -48,9 +62,12 @@
       fetch('/setup/webhook/status', { credentials: 'same-origin' })
         .then(function (r) { return r.json(); })
         .then(function (data) {
-          if (data.received) { location.reload(); return; }
+          var shown = document.getElementById('webhook-candidate');
+          if (data.received || (data.candidate && (!shown || shown.dataset.candidate !== String(data.candidate)))) {
+            location.reload(); return;
+          }
           reveal('webhook-other-server', data.other_server);
-          reveal('webhook-foreign', data.foreign);
+          if (!data.candidate) reveal('webhook-foreign', data.foreign);
           setTimeout(check, 5000);
         })
         .catch(function () { setTimeout(check, 10000); });

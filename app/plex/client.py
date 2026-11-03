@@ -22,7 +22,7 @@ from typing import Any, TypeVar
 
 from plexapi.server import PlexServer
 
-from app import db
+from app import db, settings_store
 from app.mapping.seasons import SeasonInfo
 from app.models import ShowIds
 
@@ -114,6 +114,71 @@ def save_account(account: PlexAccountInfo) -> None:
             " VALUES (?, ?, ?, datetime('now'))",
             (account.id, account.name, account.thumb),
         )
+    # A confirmed webhook id belonged to the previous choice.
+    settings_store.set_many({WEBHOOK_ACCOUNT_ALIAS: None, WEBHOOK_ACCOUNT_CANDIDATE: None})
+
+
+# --------------------------------------------------------------------------
+# the webhook account id
+#
+# Plex documents a server owner's webhook Account.id as always 1, the owner's
+# local account id. Installs have been seen where the owner's own events
+# carry another id, so every one of them was dropped as another account's.
+# Rather than guess what that id is, the bridge notices an event that is
+# plainly the chosen account's -- by name, or by Plex's own owner flags --
+# remembers the id it carries as a *candidate*, and asks. Only once the user
+# confirms it does the account filter accept that id too (the *alias*).
+# --------------------------------------------------------------------------
+SIGNED_IN_AS = "plex_signed_in_as"
+WEBHOOK_ACCOUNT_ALIAS = "plex_webhook_account_alias"
+WEBHOOK_ACCOUNT_CANDIDATE = "plex_webhook_account_candidate"
+
+
+def configured_account_name() -> str | None:
+    row = db.query_one("SELECT name FROM plex_account LIMIT 1")
+    return row["name"] if row and row["name"] else None
+
+
+def own_names() -> set[str]:
+    """Every name the chosen account goes by, lower-cased.
+
+    The stored name, plus the username and display name from the Plex
+    sign-in when that sign-in was the server owner and the owner is chosen.
+    A name that is only digits is an id standing in for a name, so it is left
+    out.
+    """
+    names = {configured_account_name() or ""}
+    hint = settings_store.get(SIGNED_IN_AS, None) or {}
+    if isinstance(hint, dict) and hint.get("owned") and configured_account_id() == 1:
+        names |= {str(hint.get("username") or ""), str(hint.get("title") or "")}
+    return {n.strip().lower() for n in names if n.strip() and not n.strip().isdigit()}
+
+
+def webhook_account_alias() -> int | None:
+    value = settings_store.get(WEBHOOK_ACCOUNT_ALIAS, None)
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def set_webhook_account_alias(account_id: int) -> None:
+    settings_store.set_many({WEBHOOK_ACCOUNT_ALIAS: int(account_id), WEBHOOK_ACCOUNT_CANDIDATE: None})
+
+
+def webhook_account_candidate() -> dict[str, Any] | None:
+    value = settings_store.get(WEBHOOK_ACCOUNT_CANDIDATE, None)
+    if isinstance(value, dict) and isinstance(value.get("id"), int):
+        return value
+    return None
+
+
+def note_webhook_account_candidate(account_id: int, reasons: list[str]) -> None:
+    """Remember an id seen on an event that looks like the chosen account's."""
+    current = webhook_account_candidate()
+    if current and current["id"] == account_id:
+        seen = int(current.get("seen") or 0) + 1
+        reasons = sorted(set(reasons) | set(current.get("reasons") or []))
+    else:
+        seen = 1
+    settings_store.set(WEBHOOK_ACCOUNT_CANDIDATE, {"id": account_id, "seen": seen, "reasons": sorted(reasons)})
 
 
 def save_libraries(libraries: list[PlexLibraryInfo], chosen: set[int]) -> None:

@@ -196,6 +196,69 @@ def test_another_server_never_reaches_the_account_filter(client):
     assert db.get_counter(routes_webhook.COUNTER_FOREIGN) == 0
 
 
+# --------------------------------------------------------------------------
+# my own events under another id: noticed, offered, accepted only once confirmed
+# --------------------------------------------------------------------------
+def _mine_as(account_id, *, event="media.play", **extra):
+    return {**MINE, "event": event, "Account": {**MINE["Account"], "id": account_id}, **extra}
+
+
+def test_my_event_under_another_id_is_dropped_but_its_id_is_offered(client):
+    """Named like the chosen account ("me"), so the id is kept as a candidate."""
+    response = client.post(url(), json=_mine_as(4242, owner=False, user=False))
+    assert response.json()["reason"] == "other account"
+    assert plex_client.webhook_account_candidate() == {"id": 4242, "seen": 1, "reasons": ["name"]}
+    assert _last_webhook() is None
+    assert db.query_one("SELECT COUNT(*) AS n FROM event")["n"] == 0
+
+
+def test_plexs_owner_flags_also_identify_the_owner(client):
+    payload = _mine_as(4242, user=True, owner=True)
+    payload["Account"] = {**payload["Account"], "title": "James"}
+    client.post(url(), json=payload)
+    client.post(url(), json=payload)
+    assert plex_client.webhook_account_candidate() == {"id": 4242, "seen": 2, "reasons": ["owner"]}
+
+
+def test_owner_flags_count_only_when_the_owner_is_chosen(client):
+    plex_client.save_account(PlexAccountInfo(812, "lodger", None))
+    payload = _mine_as(4242, user=True, owner=True)
+    payload["Account"] = {**payload["Account"], "title": "James"}
+    client.post(url(), json=payload)
+    assert plex_client.webhook_account_candidate() is None
+
+
+def test_another_persons_event_is_never_offered(client):
+    client.post(url(), json=THEIRS)
+    client.post(url(), json={**THEIRS, "event": "media.stop"})
+    assert plex_client.webhook_account_candidate() is None
+
+
+def test_a_confirmed_id_counts_as_mine(client):
+    plex_client.set_webhook_account_alias(4242)
+    assert client.post(url(), json=_mine_as(4242, event="media.scrobble")).json()["status"] == "accepted"
+    assert _last_webhook() is not None
+    # The chosen account's own id still works too.
+    assert client.post(url(), json=MINE).json()["status"] == "accepted"
+
+
+def test_choosing_an_account_forgets_a_confirmed_id(client):
+    plex_client.set_webhook_account_alias(4242)
+    plex_client.note_webhook_account_candidate(5151, ["name"])
+    plex_client.save_account(PlexAccountInfo(1, "me", None))
+    assert plex_client.webhook_account_alias() is None
+    assert plex_client.webhook_account_candidate() is None
+
+
+def test_own_names_include_the_plex_sign_in(client):
+    from app import settings_store
+
+    settings_store.set(plex_client.SIGNED_IN_AS, {"username": "Ja_es", "title": "James Alcock", "owned": True})
+    assert plex_client.own_names() == {"me", "ja_es", "james alcock"}
+    plex_client.save_account(PlexAccountInfo(1, "1", None))   # saved with no name: the id stands in
+    assert plex_client.own_names() == {"ja_es", "james alcock"}
+
+
 def test_a_wrong_path_token_is_a_404(client):
     response = client.post(url("deadbeef" * 4), json=MINE)
     assert response.status_code == 404
