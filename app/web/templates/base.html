@@ -1,80 +1,141 @@
+{% from "_ui.html" import icon, logo %}
 <!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
 <title>{% block title %}Plex AniList Bridge{% endblock %}</title>
-<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/app.css?v={{ app_version }}">
+<script>
+  // Apply a saved theme before first paint, so there is no flash. No saved
+  // choice means "follow the system".
+  try {
+    var t = localStorage.getItem('pab-theme');
+    if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+  } catch (e) {}
+</script>
 </head>
-<body>
-{% if not password_set %}
-<div class="banner banner-warn">
-  <strong>No admin password is set.</strong> Anyone who can reach this page can
-  read your account tokens. <a href="/settings#password">Set one now.</a>
-</div>
-{% endif %}
-{% if anilist.token_broken %}
-<div class="banner banner-down" role="alert">
-  <strong>The AniList token was rejected.</strong>
-  Events that need AniList are being held{% if anilist.deferred %} ({{ anilist.deferred }} so far){% endif %}
-  and will be retried after you
-  <a href="/settings#anilist">re-authorise</a>.
-</div>
-{% elif anilist.state == 'down' %}
-<div class="banner banner-down" role="alert">
-  <strong>AniList is not responding.</strong>
-  {% if anilist.deferred %}{{ anilist.deferred }} event(s) deferred &mdash; nothing is lost, they are retried automatically.
-  {% else %}New events will be deferred and retried automatically.{% endif %}
-  {% if anilist.retry_at %}Requests are paused; they resume {{ anilist.retry_at|ago }}.{% endif %}
-  <a href="/system#anilist">Details</a>
-</div>
-{% elif anilist.state == 'throttled' %}
-<div class="banner banner-warn" role="status">
-  <strong>AniList is rate limiting this client.</strong>
-  Requests resume {{ anilist.retry_at|ago if anilist.retry_at else 'shortly' }}{% if anilist.deferred %};
-  {{ anilist.deferred }} event(s) are deferred until then{% endif %}.
-  <a href="/system#anilist">Details</a>
-</div>
-{% endif %}
-
+<body class="{% block body_class %}{% endblock %}">
+{% block shell %}
 {% set here = request.url.path %}
-<header class="topbar">
-  <div class="brand"><a href="/">Plex &rarr; AniList</a></div>
-  {% if dry_run %}
-  <a href="/settings#behaviour" class="pill pill-dry"
-     title="Dry run is on: nothing is written to AniList or MyAnimeList. Every event shows what would have been written.">Dry run</a>
-  {% endif %}
-  <nav>
-    <a href="/" {% if here == '/' %}class="here" aria-current="page"{% endif %}>Dashboard</a>
-    <a href="/activity" {% if here.startswith('/activity') %}class="here" aria-current="page"{% endif %}>Activity</a>
-    <a href="/review" {% if here.startswith('/review') %}class="here" aria-current="page"{% endif %}>Review{% if pending_review %} <span class="nav-count" title="{{ pending_review }} item(s) to review">{{ pending_review }}</span>{% endif %}</a>
-    <a href="/system" {% if here == '/system' %}class="here" aria-current="page"{% endif %}>System</a>
-    <a href="/settings" {% if here == '/settings' %}class="here" aria-current="page"{% endif %}>Settings</a>
-  </nav>
-  <div class="topbar-pills">
-    {% if to_rate %}
-    <a href="/#rate" class="pill pill-accent" title="Finished series waiting for your rating">{{ to_rate }} to rate</a>
+<a class="skip-link" href="#main">Skip to content</a>
+<div class="shell">
+
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="Plex AniList Bridge, dashboard">
+      {{ logo() }}
+      <span class="brand-text">
+        <span class="brand-kicker">Plex <span aria-hidden="true">&rarr;</span> AniList</span>
+        <span class="brand-name">Bridge</span>
+      </span>
+    </a>
+
+    {% set nav_items = [
+      ('/', 'Dashboard', 'dashboard', here == '/'),
+      ('/activity', 'Activity', 'activity', here.startswith('/activity')),
+      ('/review', 'Review', 'inbox', here.startswith('/review')),
+      ('/system', 'System', 'server', here == '/system' or here.startswith('/mal')),
+      ('/settings', 'Settings', 'sliders', here == '/settings' or here.startswith('/setup')),
+    ] %}
+    <nav class="nav" aria-label="Main">
+      {% for href, label, ico, active in nav_items %}
+      <a href="{{ href }}" class="nav-link{{ ' here' if active }}" {% if active %}aria-current="page"{% endif %}>
+        {{ icon(ico) }}
+        <span class="nav-label">{{ label }}</span>
+        {% if href == '/review' and pending_review %}<span class="nav-count" title="{{ pending_review }} item(s) to review">{{ pending_review }}</span>{% endif %}
+      </a>
+      {% endfor %}
+    </nav>
+
+    <div class="sidebar-foot">
+      <div class="sidebar-pills">
+        {% if dry_run %}
+        <a href="/settings#behaviour" class="pill pill-dry"
+           title="Dry run is on: nothing is written to AniList or MyAnimeList. Every event shows what would have been written.">{{ icon('flask') }}<span>Dry run</span></a>
+        {% endif %}
+        {% if to_rate %}
+        <a href="/#rate" class="pill pill-accent" title="Finished series waiting for your rating">{{ icon('star') }}<span>{{ to_rate }} to rate</span></a>
+        {% endif %}
+        {% if anilist.deferred %}
+        <a href="/activity?status=deferred" class="pill pill-info" title="Waiting for AniList">{{ icon('clock') }}<span>{{ anilist.deferred }} deferred</span></a>
+        {% endif %}
+      </div>
+      <div class="sidebar-actions">
+        <button type="button" class="icon-button theme-toggle" id="theme-toggle" aria-label="Theme: follow system" title="Theme: follow system">
+          <span data-mode="auto">{{ icon('monitor') }}</span>
+          <span data-mode="light">{{ icon('sun') }}</span>
+          <span data-mode="dark">{{ icon('moon') }}</span>
+        </button>
+        {% if password_set %}
+        <form method="post" action="/logout" class="inline">
+          <button class="icon-button" aria-label="Sign out" title="Sign out">{{ icon('logout') }}</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+  </aside>
+
+  <div class="content">
+    {% if not password_set or anilist.token_broken or anilist.state in ('down', 'throttled') %}
+    <div class="alerts">
+      {% if not password_set %}
+      <div class="alert tone-warn">
+        {{ icon('shield') }}
+        <p><strong>No admin password is set.</strong> Anyone who can reach this page can
+          read your account tokens. <a href="/settings#password">Set one now.</a></p>
+      </div>
+      {% endif %}
+      {% if anilist.token_broken %}
+      <div class="alert tone-bad" role="alert">
+        {{ icon('key') }}
+        <p><strong>The AniList token was rejected.</strong>
+          Events that need AniList are being held{% if anilist.deferred %} ({{ anilist.deferred }} so far){% endif %}
+          and will be retried after you
+          <a href="/settings#anilist">re-authorise</a>.</p>
+      </div>
+      {% elif anilist.state == 'down' %}
+      <div class="alert tone-bad" role="alert">
+        {{ icon('alert-circle') }}
+        <p><strong>AniList is not responding.</strong>
+          {% if anilist.deferred %}{{ anilist.deferred }} event(s) deferred &mdash; nothing is lost, they are retried automatically.
+          {% else %}New events will be deferred and retried automatically.{% endif %}
+          {% if anilist.retry_at %}Requests are paused; they resume {{ anilist.retry_at|ago }}.{% endif %}
+          <a href="/system#anilist">Details</a></p>
+      </div>
+      {% elif anilist.state == 'throttled' %}
+      <div class="alert tone-warn" role="status">
+        {{ icon('clock') }}
+        <p><strong>AniList is rate limiting this client.</strong>
+          Requests resume {{ anilist.retry_at|ago if anilist.retry_at else 'shortly' }}{% if anilist.deferred %};
+          {{ anilist.deferred }} event(s) are deferred until then{% endif %}.
+          <a href="/system#anilist">Details</a></p>
+      </div>
+      {% endif %}
+    </div>
     {% endif %}
-    {% if anilist.deferred %}
-    <a href="/activity?status=deferred" class="pill pill-info" title="Waiting for AniList">{{ anilist.deferred }} deferred</a>
+
+    {% if notice %}
+    <div class="notice notice-{{ notice_level }} tone-{{ {'ok': 'ok', 'error': 'bad'}.get(notice_level, 'accent') }}" role="status">
+      {{ icon({'ok': 'check-circle', 'error': 'alert-circle'}.get(notice_level, 'info')) }}
+      <p>{{ notice }}</p>
+    </div>
     {% endif %}
+
+    <main id="main">
+    {% block content %}{% endblock %}
+    </main>
+
+    <footer class="site-footer">
+      <span>plex-anilist-bridge {{ app_version }}</span>
+      <span>GPL-3.0 &middot; mapping logic partly derived from
+        <a href="https://github.com/RickDB/PlexAniSync">PlexAniSync</a></span>
+    </footer>
   </div>
-  {% if password_set %}
-  <form method="post" action="/logout" class="inline"><button class="link">Sign out</button></form>
-  {% endif %}
-</header>
+</div>
+{% endblock %}
 
-{% if notice %}<div class="notice notice-{{ notice_level }}" role="status">{{ notice }}</div>{% endif %}
-
-<main>
-{% block content %}{% endblock %}
-</main>
-
-<footer>
-  <span>plex-anilist-bridge {{ app_version }}</span>
-  <span>GPL-3.0 &middot; mapping logic partly derived from
-    <a href="https://github.com/RickDB/PlexAniSync">PlexAniSync</a></span>
-</footer>
 <script>
   // A link to #something inside a closed <details> opens it.
   (function () {
@@ -88,6 +149,28 @@
     }
     window.addEventListener('hashchange', reveal);
     if (location.hash) reveal();
+  })();
+
+  // Theme: follow system -> light -> dark -> follow system.
+  (function () {
+    var button = document.getElementById('theme-toggle');
+    if (!button) return;
+    var root = document.documentElement;
+    var names = { auto: 'follow system', light: 'light', dark: 'dark' };
+    function label() {
+      var mode = root.dataset.theme || 'auto';
+      button.setAttribute('aria-label', 'Theme: ' + names[mode]);
+      button.title = 'Theme: ' + names[mode];
+    }
+    button.addEventListener('click', function () {
+      var next = { auto: 'light', light: 'dark', dark: 'auto' }[root.dataset.theme || 'auto'];
+      if (next === 'auto') delete root.dataset.theme; else root.dataset.theme = next;
+      try {
+        if (next === 'auto') localStorage.removeItem('pab-theme'); else localStorage.setItem('pab-theme', next);
+      } catch (e) {}
+      label();
+    });
+    label();
   })();
 </script>
 {% block scripts %}{% endblock %}

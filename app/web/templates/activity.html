@@ -1,10 +1,15 @@
 {% extends "base.html" %}
+{% from "_ui.html" import icon, tone %}
 {% block title %}Activity &middot; Plex AniList Bridge{% endblock %}
 {% block content %}
 
-<div class="page-head">
-  <h1>Activity</h1>
-</div>
+<header class="page-head">
+  <div>
+    <p class="eyebrow">Log</p>
+    <h1>Activity</h1>
+    <p class="lead">Every play the bridge received, what it matched, and what it wrote.</p>
+  </div>
+</header>
 
 <div class="toolbar">
   <nav class="chips" aria-label="Filter by outcome">
@@ -12,20 +17,24 @@
     {% for s in statuses %}
       {% if status_counts.get(s) or status == s %}
       <a href="/activity?status={{ s }}{% if q %}&q={{ q|urlencode }}{% endif %}"
-         class="chip chip-{{ s }} {{ 'chip-on' if status == s }}">{{ s|replace('_', ' ') }} <span>{{ status_counts.get(s, 0) }}</span></a>
+         class="chip chip-{{ s }} tone-{{ tone(s) }} {{ 'chip-on' if status == s }}">{{ s|replace('_', ' ') }} <span>{{ status_counts.get(s, 0) }}</span></a>
       {% endif %}
     {% endfor %}
   </nav>
 
   <form method="get" action="/activity" class="search">
     {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
-    <input name="q" value="{{ q }}" placeholder="Search titles" type="search" aria-label="Show title contains">
+    <span class="search-field">
+      {{ icon('search') }}
+      <input name="q" value="{{ q }}" placeholder="Search titles" type="search" aria-label="Show title contains">
+    </span>
     {% if q %}<a href="/activity{% if status %}?status={{ status }}{% endif %}" class="small">clear</a>{% endif %}
   </form>
 </div>
 
 {% if status == 'deferred' %}
-<div class="callout">
+<div class="callout tone-info">
+  {{ icon('clock') }}
   <p>
     <strong>Deferred</strong> events matched, but AniList could not be used at the
     time. They are retried automatically; nothing is lost.
@@ -35,71 +44,82 @@
   <form method="post" action="/actions/retry-deferred">
     <input type="hidden" name="back" value="/activity?status=deferred">
     <button {% if anilist.retry_running or anilist.retry_blocked %}disabled{% endif %}
-            {% if anilist.retry_blocked %}title="Not now: {{ anilist.retry_blocked }}"{% endif %}>Retry deferred now</button>
+            {% if anilist.retry_blocked %}title="Not now: {{ anilist.retry_blocked }}"{% endif %}>{{ icon('refresh', 'icon-sm') }} Retry deferred now</button>
   </form>
   {% endif %}
 </div>
 {% elif status in ('held', 'unmatched') and pending_review %}
-<div class="callout">
+<div class="callout tone-warn">
+  {{ icon('inbox') }}
   <p>Held and unmatched events are grouped by show on the review page, where each can be linked to an AniList title.</p>
   <a href="/review">Review them &rarr;</a>
 </div>
 {% elif status == 'awaiting_rating' and to_rate %}
-<div class="callout">
+<div class="callout tone-violet">
+  {{ icon('star') }}
   <p>These finished a series. Each is held one episode short until you rate it.</p>
   <a href="/#rate">Rate them &rarr;</a>
 </div>
 {% endif %}
 
 {% if events %}
+<section class="panel flush">
 <div class="table-wrap">
-<table class="log">
+<table class="log stack">
   <thead>
     <tr><th>When</th><th>Item</th><th>Outcome</th><th><span class="sr-only">Details</span></th></tr>
   </thead>
   <tbody>
   {% for e in events %}
-  <tr class="row-{{ e.status }}">
+  <tr class="row-{{ e.status }} tone-{{ tone(e.status) }}">
     <td class="nowrap muted small">{{ (e.viewed_at or e.received_at)|ago }}</td>
     <td>
-      <strong>{{ e.show_title or 'unknown' }}</strong>
-      {% if e.media_kind == 'episode' %}
-        <span class="muted">S{{ '%02d' % (e.season or 0) }}E{{ '%02d' % (e.episode or 0) }}</span>
-      {% else %}<span class="muted">movie</span>{% endif %}
-      {% if e.anilist_id %}
-      <div class="small muted">
-        &rarr; <a href="https://anilist.co/anime/{{ e.anilist_id }}" target="_blank" rel="noreferrer">AniList {{ e.anilist_id }}</a>{% if e.entry_episode %} ep {{ e.entry_episode }}{% endif %}
-        {% if e.confidence == 'uncertain' %}<span class="tag tag-uncertain">uncertain</span>{% endif %}
+      <div class="item-cell">
+        <span class="title-line">
+          <strong>{{ e.show_title or 'unknown' }}</strong>
+          {% if e.media_kind == 'episode' %}
+            <span class="ep-code">S{{ '%02d' % (e.season or 0) }}E{{ '%02d' % (e.episode or 0) }}</span>
+          {% else %}<span class="ep-code">movie</span>{% endif %}
+        </span>
+        {% if e.anilist_id %}
+        <span class="small muted">
+          &rarr; <a href="https://anilist.co/anime/{{ e.anilist_id }}" target="_blank" rel="noreferrer">AniList {{ e.anilist_id }}</a>{% if e.entry_episode %} ep {{ e.entry_episode }}{% endif %}
+          {% if e.confidence == 'uncertain' %}<span class="tag tone-warn">uncertain</span>{% endif %}
+        </span>
+        {% endif %}
       </div>
-      {% endif %}
     </td>
     <td>
-      <span class="tag tag-{{ e.status }}">{{ e.status|replace('_', ' ') }}</span>
+      <span class="tag tag-{{ e.status }} tone-{{ tone(e.status) }}">{{ e.status|replace('_', ' ') }}</span>
       {% if e.status == 'deferred' and e.next_attempt_at %}<span class="muted small">retry {{ e.next_attempt_at|ago }}</span>{% endif %}
       <div class="small clamp" title="{{ e.detail or '' }}">{{ e.detail or '' }}</div>
     </td>
-    <td class="nowrap"><a href="/activity/{{ e.id }}">why?</a></td>
+    <td class="nowrap"><a href="/activity/{{ e.id }}" class="why">why? {{ icon('arrow-right') }}</a></td>
   </tr>
   {% endfor %}
   </tbody>
 </table>
 </div>
+</section>
 
 <div class="pager">
   {% if page > 1 %}
-    <a href="/activity?page={{ page - 1 }}{% if status %}&status={{ status }}{% endif %}{% if q %}&q={{ q|urlencode }}{% endif %}">&larr; newer</a>
+    <a href="/activity?page={{ page - 1 }}{% if status %}&status={{ status }}{% endif %}{% if q %}&q={{ q|urlencode }}{% endif %}">{{ icon('arrow-left', 'icon-sm') }} newer</a>
   {% endif %}
-  <span class="muted">page {{ page }} &middot; {{ total }} event(s)</span>
+  <span class="muted small">page {{ page }} &middot; {{ total }} event(s)</span>
   {% if events|length == per_page %}
-    <a href="/activity?page={{ page + 1 }}{% if status %}&status={{ status }}{% endif %}{% if q %}&q={{ q|urlencode }}{% endif %}">older &rarr;</a>
+    <a href="/activity?page={{ page + 1 }}{% if status %}&status={{ status }}{% endif %}{% if q %}&q={{ q|urlencode }}{% endif %}">older {{ icon('arrow-right', 'icon-sm') }}</a>
   {% endif %}
 </div>
 {% else %}
-<p class="muted">
+<div class="empty">
+  {{ icon('activity') }}
+  <span>
   {% if status or q %}No events match this filter.
   {% else %}No events yet. Watch something on the configured account, or run a reconcile
   from <a href="/system#jobs">System</a>.{% endif %}
-</p>
+  </span>
+</div>
 {% endif %}
 
 {% endblock %}

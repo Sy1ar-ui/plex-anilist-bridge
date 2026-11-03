@@ -1,23 +1,31 @@
 {% extends "base.html" %}
+{% from "_ui.html" import icon, tone %}
 {% block title %}System &middot; Plex AniList Bridge{% endblock %}
 {% block content %}
 
 {% set state_label = {'ok': 'Healthy', 'degraded': 'Degraded', 'throttled': 'Throttled', 'down': 'Down'} %}
 {% set state_class = {'ok': 'ok', 'degraded': 'warn', 'throttled': 'warn', 'down': 'bad'} %}
 
-<div class="page-head">
-  <h1>System</h1>
-  <p class="muted">{{ event_total }} event(s) recorded &middot;
-    {{ counters.accepted }} accepted, {{ counters.dropped_other_accounts }} dropped from other accounts,
-    {{ counters.ignored }} ignored, all time</p>
-</div>
+<header class="page-head">
+  <div>
+    <p class="eyebrow">Machinery</p>
+    <h1>System</h1>
+    <p class="lead">Connections, the AniList API, mapping data and scheduled jobs.</p>
+    <div class="stat-row" aria-label="Webhook totals, all time">
+      <span class="stat"><strong>{{ event_total }}</strong> event(s) recorded</span>
+      <span class="stat"><strong>{{ counters.accepted }}</strong> accepted</span>
+      <span class="stat"><strong>{{ counters.dropped_other_accounts }}</strong> dropped from other accounts</span>
+      <span class="stat"><strong>{{ counters.ignored }}</strong> ignored, all time</span>
+    </div>
+  </div>
+</header>
 
 <section class="cards">
 
   <div class="card card-wide" id="anilist">
-    <div class="card-head">
-      <h3>AniList API</h3>
-      <span class="badge badge-{{ state_class[anilist.state] }}">{{ state_label[anilist.state] }}</span>
+<div class="panel-head">
+      <div class="panel-title"><span class="panel-icon">{{ icon('cloud') }}</span><h3>AniList API</h3></div>
+      <span class="badge badge-{{ state_class[anilist.state] }} tone-{{ state_class[anilist.state] }}">{{ state_label[anilist.state] }}</span>
     </div>
     <p>{{ anilist.summary }}</p>
 
@@ -26,7 +34,7 @@
       <dd>
         {{ anilist.limit_per_minute }}/min
         {% if anilist.limit_reduced %}
-          <span class="tag tag-held" title="AniList's normal limit is {{ anilist.normal_limit_per_minute }}/min">reduced from {{ anilist.normal_limit_per_minute }}</span>
+          <span class="tag tag-held tone-warn" title="AniList's normal limit is {{ anilist.normal_limit_per_minute }}/min">reduced from {{ anilist.normal_limit_per_minute }}</span>
         {% endif %}
         {% if anilist.remaining is not none %}<span class="muted">&middot; {{ anilist.remaining }} left this minute</span>{% endif %}
       </dd>
@@ -56,7 +64,7 @@
           {% if anilist.deferred %}<a href="/activity?status=deferred">{{ anilist.deferred }} deferred event(s)</a>{% endif %}
           {% if anilist.queued_ratings %}{% if anilist.deferred %} &middot; {% endif %}<a href="/#rate">{{ anilist.queued_ratings }} rating(s)</a>{% endif %}
           {% if anilist.next_retry %}<span class="muted">&middot; next due {{ anilist.next_retry|ago }}</span>{% endif %}
-          {% if anilist.retry_running %}<span class="tag tag-would_write">retrying now</span>{% endif %}
+          {% if anilist.retry_running %}<span class="tag tone-accent">retrying now</span>{% endif %}
         {% else %}
           <span class="muted">nothing</span>
         {% endif %}
@@ -87,13 +95,15 @@
   </div>
 
   <div class="card" id="connections">
-    <h3>Connections</h3>
+    <div class="panel-head">
+      <div class="panel-title"><span class="panel-icon">{{ icon('plug') }}</span><h3>Connections</h3></div>
+    </div>
     <dl class="facts">
       <dt>Plex</dt>
       <dd>
         {% if plex_configured %}
-          <span class="ok">connected</span> <span class="muted small">{{ plex_base_url }}</span>
-        {% else %}<a href="/settings#plex" class="bad">not configured</a>{% endif %}
+          <span class="tag tone-ok">connected</span> <span class="muted small">{{ plex_base_url }}</span>
+        {% else %}<a href="/settings#plex" class="tag tone-bad">not configured</a>{% endif %}
       </dd>
       <dt>Account</dt>
       <dd>
@@ -106,9 +116,9 @@
       <dt>{{ 'AniList' if provider == 'anilist' else 'MyAnimeList' if provider == 'mal' else provider }}</dt>
       <dd>
         {% if record.status == 'ok' %}
-          <span class="ok">ok</span>{% if record.account_name %} <span class="muted">as {{ record.account_name }}</span>{% endif %}
-        {% elif record.status == 'broken' %}<a href="/settings#anilist" class="bad">rejected</a>
-        {% elif record.status == 'expiring' %}<span class="warn">expiring</span>
+          <span class="tag tone-ok">ok</span>{% if record.account_name %} <span class="muted">as {{ record.account_name }}</span>{% endif %}
+        {% elif record.status == 'broken' %}<a href="/settings#anilist" class="tag tone-bad">rejected</a>
+        {% elif record.status == 'expiring' %}<span class="tag tone-warn">expiring</span>
         {% else %}<span class="muted">not connected</span>{% endif %}
         {% if record.last_error %}<br><span class="bad-text small">{{ record.last_error }}</span>{% endif %}
       </dd>
@@ -117,18 +127,24 @@
   </div>
 
   <div class="card" id="mal">
-    <h3>MyAnimeList mirror</h3>
-    <p>{% if mal_blocked %}<span class="muted">{{ mal_blocked|capitalize }}.</span>{% else %}<span class="ok">On</span>{% endif %}</p>
+    <div class="panel-head">
+      <div class="panel-title"><span class="panel-icon">{{ icon('repeat') }}</span><h3>MyAnimeList mirror</h3></div>
+      {% if mal_blocked %}<span class="badge tone-muted">Off</span>{% else %}<span class="badge tone-ok">On</span>{% endif %}
+    </div>
+    {% if mal_blocked %}<p class="muted">{{ mal_blocked|capitalize }}.</p>{% endif %}
     <p class="small">Last run {{ mal_last_poll|ago }}{% if mal_last_summary %}<br><span class="muted">{{ mal_last_summary }}</span>{% endif %}</p>
-    <a class="button secondary" href="/mal">Open</a>
+    <a class="button secondary" href="/mal">Open {{ icon('arrow-right', 'icon-sm') }}</a>
   </div>
 
   <div class="card" id="sonarr">
-    <h3>Sonarr</h3>
+    <div class="panel-head">
+      <div class="panel-title"><span class="panel-icon">{{ icon('tv') }}</span><h3>Sonarr</h3></div>
+      {% if sonarr.configured %}<span class="badge tone-ok">Connected</span>{% else %}<span class="badge">Optional</span>{% endif %}
+    </div>
     {% if sonarr.configured %}
-      <p><span class="ok">{{ sonarr.series }} series</span> <span class="muted small">read {{ sonarr.refreshed_at|ago }}</span></p>
+      <p><span class="tag tone-ok">{{ sonarr.series }} series</span> <span class="muted small">read {{ sonarr.refreshed_at|ago }}</span></p>
       {% if sonarr.last_error %}<p class="bad-text small">{{ sonarr.last_error }}</p>{% endif %}
-      <form method="post" action="/actions/refresh-sonarr"><button class="secondary">Refresh now</button></form>
+      <form method="post" action="/actions/refresh-sonarr"><button class="secondary">{{ icon('refresh', 'icon-sm') }} Refresh now</button></form>
     {% else %}
       <p class="muted">Not set up. Optional: it helps match shows Plex gives no TVDB id.
         <a href="/settings#sonarr">Set up</a></p>
@@ -136,15 +152,17 @@
   </div>
 
   <div class="card" id="datasets">
-    <h3>Mapping datasets</h3>
+    <div class="panel-head">
+      <div class="panel-title"><span class="panel-icon">{{ icon('database') }}</span><h3>Mapping datasets</h3></div>
+    </div>
     {% if datasets %}
     <dl class="facts">
       {% for ds in datasets %}
       <dt>{{ ds.name }}</dt>
       <dd>
-        {% if ds.status == 'ok' %}<span class="ok">ok</span>
-        {% elif ds.status == 'stale' %}<span class="warn">stale cache</span>
-        {% else %}<span class="bad">{{ ds.status }}</span>{% endif %}
+        {% if ds.status == 'ok' %}<span class="tag tone-ok">ok</span>
+        {% elif ds.status == 'stale' %}<span class="tag tone-warn">stale cache</span>
+        {% else %}<span class="tag tone-bad">{{ ds.status }}</span>{% endif %}
         <span class="muted small">{{ ds.row_count }} rows &middot; {{ ds.fetched_at|ago }}</span>
         {% if ds.last_error %}<br><span class="bad-text small">{{ ds.last_error }}</span>{% endif %}
       </dd>
@@ -154,12 +172,14 @@
       <p class="muted">Not loaded yet.</p>
     {% endif %}
     <form method="post" action="/actions/refresh-datasets">
-      <button class="secondary">Refresh now</button>
+      <button class="secondary">{{ icon('refresh', 'icon-sm') }} Refresh now</button>
     </form>
   </div>
 
   <div class="card" id="jobs">
-    <h3>Scheduled jobs</h3>
+    <div class="panel-head">
+      <div class="panel-title"><span class="panel-icon">{{ icon('calendar') }}</span><h3>Scheduled jobs</h3></div>
+    </div>
     {% if jobs %}
     <dl class="facts facts-right">
       {% for job in jobs %}
@@ -179,9 +199,9 @@
 </section>
 
 <section class="panel" id="webhook">
-  <div class="card-head">
-    <h2>Plex webhook</h2>
-    <span class="muted small">last received {{ last_webhook|ago }}</span>
+  <div class="panel-head">
+    <div class="panel-title"><span class="panel-icon tone-plex">{{ icon('zap') }}</span><h2>Plex webhook</h2></div>
+    <span class="tag tone-{{ 'ok' if last_webhook else 'warn' }}">last received {{ last_webhook|ago }}</span>
   </div>
   <p>In Plex, open <em>Settings &rarr; Webhooks &rarr; Add Webhook</em> and paste this URL.</p>
   {% include "_copy.html" %}

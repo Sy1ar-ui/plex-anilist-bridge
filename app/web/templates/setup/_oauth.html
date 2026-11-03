@@ -1,7 +1,8 @@
+{% from "_ui.html" import icon %}
 {# Shared by the AniList and MyAnimeList steps. #}
 {% set name = 'AniList' if provider == 'anilist' else 'MyAnimeList' %}
 {% if token.present and token.status != 'broken' %}
-  <p class="ok">Connected to {{ name }}{% if token.account_name %} as {{ token.account_name }}{% endif %}.
+  <p class="status-line">{{ icon('check-circle') }} Connected to {{ name }}{% if token.account_name %} as {{ token.account_name }}{% endif %}.
     {% if token.expires_at %}<span class="muted small">Token valid until {{ token.expires_at|day }}.</span>{% endif %}</p>
 {% elif token.status == 'broken' %}
   <p class="bad-text">{{ token.last_error or ('The ' ~ name ~ ' token was rejected.') }} Sign in again below.</p>

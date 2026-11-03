@@ -1,26 +1,30 @@
 {% extends "base.html" %}
+{% from "_ui.html" import icon, tone %}
 {% block title %}Event {{ event.id }} &middot; Plex AniList Bridge{% endblock %}
 {% block content %}
 
-<p><a href="/activity">&larr; back to activity</a></p>
+<header class="page-head">
+  <div>
+    <a class="back" href="/activity">{{ icon('arrow-left') }} back to activity</a>
+    <h1>{{ event.show_title or 'Unknown item' }}
+      {% if event.media_kind == 'episode' %}
+        <span class="muted">S{{ '%02d' % (event.season or 0) }}E{{ '%02d' % (event.episode or 0) }}</span>
+      {% endif %}
+    </h1>
+    <div class="meta-row">
+      <span class="tag tag-{{ event.status }} tone-{{ tone(event.status) }}">{{ event.status|replace('_', ' ') }}</span>
+      {% if event.confidence %}<span class="tag tag-{{ event.confidence }} tone-{{ tone(event.confidence) }}">{{ event.confidence }}</span>{% endif %}
+      <span class="tag">{{ event.source }}</span>
+      <span class="muted small">received {{ event.received_at|ago }}{% if event.viewed_at %} &middot; watched {{ event.viewed_at|ago }}{% endif %}</span>
+    </div>
+  </div>
+</header>
 
-<h1>{{ event.show_title or 'Unknown item' }}
-  {% if event.media_kind == 'episode' %}
-    <span class="muted">S{{ '%02d' % (event.season or 0) }}E{{ '%02d' % (event.episode or 0) }}</span>
-  {% endif %}
-</h1>
-
-<p>
-  <span class="tag tag-{{ event.status }}">{{ event.status|replace('_', ' ') }}</span>
-  {% if event.confidence %}<span class="tag tag-{{ event.confidence }}">{{ event.confidence }}</span>{% endif %}
-  <span class="tag">{{ event.source }}</span>
-  <span class="muted">received {{ event.received_at|ago }}{% if event.viewed_at %} &middot; watched {{ event.viewed_at|ago }}{% endif %}</span>
-</p>
-
-<p class="detail detail-{{ event.status }}">{{ event.detail or '' }}</p>
+<p class="detail detail-{{ event.status }} tone-{{ tone(event.status) }}">{{ event.detail or '' }}</p>
 
 {% if pending_rating %}
-<div class="callout">
+<div class="callout tone-violet">
+  {{ icon('star') }}
   <p>
     This finished the series. AniList is held at
     {{ pending_rating.total_episodes - 1 }}/{{ pending_rating.total_episodes }} until you rate it;
@@ -31,7 +35,8 @@
 {% endif %}
 
 {% if reviewable %}
-<div class="callout">
+<div class="callout tone-warn">
+  {{ icon('link') }}
   <p>This could not be matched confidently, so nothing was written. Link it to the right AniList
      title once and every episode of this season follows the correction.</p>
   <a class="button" href="/review/{{ event.id }}">Fix match</a>
@@ -39,7 +44,8 @@
 {% endif %}
 
 {% if retryable %}
-<div class="callout">
+<div class="callout tone-{{ 'info' if event.status == 'deferred' else 'bad' }}">
+  {{ icon('refresh') }}
   <p>
     {% if event.status == 'deferred' %}
       AniList could not be used when this was processed, so it is waiting rather than failed.
@@ -57,24 +63,31 @@
 {% endif %}
 
 <section class="panel">
-  <h2>Why it matched this way</h2>
+  <div class="panel-head">
+    <div class="panel-title">
+      <span class="panel-icon">{{ icon('git-branch') }}</span>
+      <h2>Why it matched this way</h2>
+    </div>
+  </div>
   {% if trace %}
     <p class="summary">{{ trace.summary }}</p>
-    <table class="trace">
-      <thead><tr><th>Layer</th><th></th><th>What happened</th></tr></thead>
-      <tbody>
+    <ol class="trace">
       {% for step in trace.steps %}
-      <tr>
-        <td class="nowrap"><span class="tag">{{ step.layer }}</span></td>
-        <td class="nowrap"><span class="tag tag-{{ step.outcome }}">{{ step.outcome }}</span></td>
-        <td>{{ step.detail }}</td>
-      </tr>
+      <li class="trace-step tone-{{ tone(step.outcome) }}">
+        <span class="trace-node" aria-hidden="true"></span>
+        <div>
+          <div class="trace-meta">
+            <span class="tag">{{ step.layer }}</span>
+            <span class="tag tag-{{ step.outcome }} tone-{{ tone(step.outcome) }}">{{ step.outcome }}</span>
+          </div>
+          <p class="trace-detail">{{ step.detail }}</p>
+        </div>
+      </li>
       {% endfor %}
-      </tbody>
-    </table>
+    </ol>
     {% if trace.candidates %}
-    <h3>Other candidates</h3>
-    <ul>
+    <h4>Other candidates</h4>
+    <ul class="candidates">
       {% for c in trace.candidates %}
       <li>
         <a href="https://anilist.co/anime/{{ c.anilist_id }}" target="_blank" rel="noreferrer">
@@ -92,15 +105,20 @@
 </section>
 
 <section class="panel">
-  <h2>What was sent</h2>
+  <div class="panel-head">
+    <div class="panel-title">
+      <span class="panel-icon">{{ icon('send') }}</span>
+      <h2>What was sent</h2>
+    </div>
+  </div>
   {% if writes %}
     {% for w in writes %}
     <div class="write">
       <p>
         <span class="tag">{{ w.target }}</span>
-        <span class="tag tag-{{ w.result }}">{{ w.result }}</span>
-        {% if w.dry_run %}<span class="tag tag-dry">dry run</span>{% endif %}
-        <span class="muted">{{ w.operation }} &middot; {{ w.at }}</span>
+        <span class="tag tag-{{ w.result }} tone-{{ tone(w.result) }}">{{ w.result }}</span>
+        {% if w.dry_run %}<span class="tag tag-dry tone-accent">dry run</span>{% endif %}
+        <span class="muted small">{{ w.operation }} &middot; {{ w.at }}</span>
       </p>
       {% if w.error %}<p class="bad">{{ w.error }}</p>{% endif %}
       <h4>Request</h4>

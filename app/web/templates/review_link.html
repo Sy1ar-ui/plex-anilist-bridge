@@ -1,29 +1,34 @@
 {% extends "base.html" %}
+{% from "_ui.html" import icon, tone, monogram %}
 {% block title %}Fix match &middot; Plex AniList Bridge{% endblock %}
 {% block content %}
 
-<p><a href="/review">&larr; back to review</a></p>
-
-<div class="page-head">
-  <h1>{{ group.title }}
-    <span class="muted">{% if group.media_kind == 'movie' %}movie{% else %}season {{ group.season }}{% endif %}</span>
-  </h1>
-  <p class="muted">
-    <span class="tag tag-{{ group.status }}">{{ group.status }}</span>
-    {% if group.episodes and group.media_kind != 'movie' %}Waiting: episode{{ 's' if group.episodes|length > 1 }} {{ group.episode_text }}.{% endif %}
-    {{ group.summary }}
-    <a href="/activity/{{ group.latest_id }}">Full trace</a>
-  </p>
-</div>
+<header class="page-head">
+  <div>
+    <a class="back" href="/review">{{ icon('arrow-left') }} back to review</a>
+    <h1>{{ group.title }}
+      <span class="muted">{% if group.media_kind == 'movie' %}movie{% else %}season {{ group.season }}{% endif %}</span>
+    </h1>
+    <p class="lead">
+      <span class="tag tag-{{ group.status }} tone-{{ tone(group.status) }}">{{ group.status }}</span>
+      {% if group.episodes and group.media_kind != 'movie' %}Waiting: episode{{ 's' if group.episodes|length > 1 }} {{ group.episode_text }}.{% endif %}
+      <span class="muted">{{ group.summary }}</span>
+      <a href="/activity/{{ group.latest_id }}">Full trace</a>
+    </p>
+  </div>
+</header>
 
 <section class="panel" id="pick">
-  <h2><span class="step">1</span> Pick the AniList title</h2>
+  <div class="panel-head">
+    <div class="panel-title"><span class="step">1</span><h2>Pick the AniList title</h2></div>
+  </div>
 
   {% if group.candidates %}
-  <h3>Suggested</h3>
+  <p class="divider-label">Suggested</p>
   <ul class="pick-list">
     {% for c in group.candidates %}
     <li class="{{ 'chosen' if chosen and chosen.anilist_id == c.anilist_id }}">
+      {{ monogram(c.title or c.anilist_id) }}
       <span>
         <strong>{{ c.title or ('AniList ' ~ c.anilist_id) }}</strong>
         <span class="muted small">AniList {{ c.anilist_id }}{% if c.total_episodes %} &middot; {{ c.total_episodes }} eps{% endif %} &middot; {{ c.layer }}{% if c.note %} &middot; {{ c.note }}{% endif %}</span>
@@ -34,8 +39,9 @@
   </ul>
   {% endif %}
 
+  <p class="divider-label">Search AniList</p>
   <form method="get" action="/review/{{ group.latest_id }}" class="search-row">
-    <input type="search" name="q" value="{{ query }}" placeholder="Search AniList" aria-label="Search AniList">
+    <span class="search-field">{{ icon('search') }}<input type="search" name="q" value="{{ query }}" placeholder="Search AniList" aria-label="Search AniList"></span>
     <button class="secondary">Search</button>
   </form>
   {% if search_error %}<p class="bad-text small">{{ search_error }}</p>{% endif %}
@@ -45,6 +51,7 @@
     {% for m in results %}
     {% set names = m.title or {} %}
     <li class="{{ 'chosen' if chosen and chosen.anilist_id == m.id }}">
+      {{ monogram(names.english or names.romaji or m.id) }}
       <span>
         <strong>{{ names.english or names.romaji or ('AniList ' ~ m.id) }}</strong>
         {% if names.english and names.romaji and names.english != names.romaji %}<span class="muted small">{{ names.romaji }}</span>{% endif %}
@@ -61,6 +68,7 @@
   <p class="muted small">AniList found nothing for &ldquo;{{ query }}&rdquo;.</p>
   {% endif %}
 
+  <p class="divider-label">Or paste an id</p>
   <form method="get" action="/review/{{ group.latest_id }}" class="search-row">
     <input name="anilist" value="{{ chosen.anilist_id if chosen else '' }}" placeholder="AniList id or anilist.co link" aria-label="AniList id or link">
     <button class="secondary">Use</button>
@@ -70,11 +78,16 @@
 
 {% if chosen %}
 <section class="panel" id="range">
-  <h2><span class="step">2</span> {% if group.media_kind == 'movie' %}Confirm{% else %}Episode range{% endif %}</h2>
-  <p>
-    <a href="https://anilist.co/anime/{{ chosen.anilist_id }}" target="_blank" rel="noreferrer"><strong>{{ chosen.title }}</strong></a>
-    <span class="muted">AniList {{ chosen.anilist_id }}{% if chosen.format %} &middot; {{ chosen.format }}{% endif %}{% if chosen.episodes %} &middot; {{ chosen.episodes }} episodes{% else %} &middot; episode count unknown{% endif %}</span>
-  </p>
+  <div class="panel-head">
+    <div class="panel-title"><span class="step">2</span><h2>{% if group.media_kind == 'movie' %}Confirm{% else %}Episode range{% endif %}</h2></div>
+  </div>
+  <div class="chosen-title">
+    {{ monogram(chosen.title) }}
+    <span>
+      <a href="https://anilist.co/anime/{{ chosen.anilist_id }}" target="_blank" rel="noreferrer"><strong>{{ chosen.title }}</strong></a>
+      <span class="muted small">AniList {{ chosen.anilist_id }}{% if chosen.format %} &middot; {{ chosen.format }}{% endif %}{% if chosen.episodes %} &middot; {{ chosen.episodes }} episodes{% else %} &middot; episode count unknown{% endif %}</span>
+    </span>
+  </div>
 
   <form method="post" action="/review/{{ group.latest_id }}/link" id="range-form"
         data-total="{{ chosen.episodes or '' }}" data-season-end="{{ season_end or '' }}"

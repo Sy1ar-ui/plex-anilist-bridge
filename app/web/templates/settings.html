@@ -1,26 +1,32 @@
 {% extends "base.html" %}
+{% from "_ui.html" import icon %}
 {% block title %}Settings &middot; Plex AniList Bridge{% endblock %}
 {% block content %}
 
-<div class="page-head">
-  <h1>Settings</h1>
-  <p class="muted">Changes apply immediately. Nothing needs a restart.</p>
-</div>
+<header class="page-head">
+  <div>
+    <p class="eyebrow">Configuration</p>
+    <h1>Settings</h1>
+    <p class="lead">Changes apply immediately. Nothing needs a restart.</p>
+  </div>
+</header>
 
+<div class="settings-layout">
 <nav class="section-nav" aria-label="Settings sections">
-  <a href="#plex">Plex</a>
-  <a href="#anilist">AniList</a>
-  <a href="#sonarr">Sonarr</a>
-  <a href="#behaviour">Sync</a>
-  <a href="#mal">MyAnimeList</a>
-  <a href="#notifications">Notifications</a>
-  <a href="#agent">Agent access</a>
-  <a href="#advanced">Advanced</a>
-  <a href="#password">Password</a>
+  {% for href, label, ico in [('plex', 'Plex', 'play'), ('anilist', 'AniList', 'cloud'), ('sonarr', 'Sonarr', 'tv'),
+                              ('behaviour', 'Sync', 'refresh'), ('mal', 'MyAnimeList', 'repeat'),
+                              ('notifications', 'Notifications', 'bell'), ('agent', 'Agent access', 'bot'),
+                              ('advanced', 'Advanced', 'sliders'), ('password', 'Password', 'lock')] %}
+  <a href="#{{ href }}">{{ icon(ico) }}{{ label }}</a>
+  {% endfor %}
 </nav>
 
+<div class="settings-main">
+
 <section class="panel" id="plex">
-  <h2>Plex</h2>
+  <div class="panel-head">
+    <div class="panel-title"><span class="panel-icon">{{ icon('play') }}</span><h2>Plex</h2></div>
+  </div>
   {% if plex_error %}<p class="bad">{{ plex_error }}</p>{% endif %}
   <form method="post" action="/settings/plex">
     <label>Server URL
@@ -86,10 +92,12 @@
 </section>
 
 <section class="panel" id="anilist">
-  <h2>AniList</h2>
+  <div class="panel-head">
+    <div class="panel-title"><span class="panel-icon">{{ icon('cloud') }}</span><h2>AniList</h2></div>
+  </div>
   {% set anilist_token = token_status['anilist'] %}
   {% if anilist_token.status == 'ok' %}
-    <p class="ok">Connected as {{ anilist_token.account_name }}</p>
+    <p class="status-line">{{ icon('check-circle') }} <span>Connected as <strong>{{ anilist_token.account_name }}</strong></span></p>
   {% elif anilist_token.last_error %}
     <p class="bad">{{ anilist_token.last_error }}</p>
     {% if anilist.deferred %}
@@ -106,12 +114,14 @@
 </section>
 
 <section class="panel" id="sonarr">
-  <h2>Sonarr <span class="muted small">optional</span></h2>
-  <p class="muted small">If Plex gives some shows no TVDB id (a TMDB-only or legacy agent, or Personal Media),
+  <div class="panel-head">
+    <div class="panel-title"><span class="panel-icon">{{ icon('tv') }}</span><h2>Sonarr <span class="badge">optional</span></h2></div>
+  </div>
+  <p class="panel-lead">If Plex gives some shows no TVDB id (a TMDB-only or legacy agent, or Personal Media),
     the bridge can look them up in Sonarr instead, by IMDb/TMDB id, folder name, or &mdash; as a guess held for
     review &mdash; title. Read only: nothing is ever written to Sonarr.</p>
   {% if sonarr.configured %}
-    <p class="ok">Connected &middot; {{ sonarr.series }} series, read {{ sonarr.refreshed_at|ago }}</p>
+    <p class="status-line">{{ icon('check-circle') }} <span>Connected &middot; {{ sonarr.series }} series, read {{ sonarr.refreshed_at|ago }}</span></p>
   {% endif %}
   {% if sonarr.last_error %}<p class="bad-text small">{{ sonarr.last_error }}</p>{% endif %}
   <form method="post" action="/settings/sonarr">
@@ -131,23 +141,25 @@
 </section>
 
 <section class="panel" id="behaviour">
-  <h2>Sync</h2>
-  <form method="post" action="/settings/behaviour">
+  <div class="panel-head">
+    <div class="panel-title"><span class="panel-icon">{{ icon('refresh') }}</span><h2>Sync</h2></div>
+  </div>
+  <form method="post" action="/settings/behaviour" class="settings-form">
     <fieldset>
-      <legend>Safety</legend>
-      <label class="check">
+      <legend>{{ icon('shield') }} Safety</legend>
+      <label class="check switch">
         <input type="checkbox" name="dry_run" {% if settings.dry_run %}checked{% endif %}>
         Dry run &mdash; work everything out but write nothing
       </label>
-      <label class="check">
+      <label class="check switch">
         <input type="checkbox" name="sync_enabled" {% if settings.sync_enabled %}checked{% endif %}>
         Syncing enabled
       </label>
     </fieldset>
 
     <fieldset>
-      <legend>What gets written</legend>
-      <label class="check">
+      <legend>{{ icon('send') }} What gets written</legend>
+      <label class="check switch">
         <input type="checkbox" name="rate_before_complete" {% if settings.rate_before_complete %}checked{% endif %}>
         Ask for my rating before marking a series complete
       </label>
@@ -155,15 +167,15 @@
         The final episode waits on the dashboard (AniList shows e.g. 11/12) until you rate it.
         The completion is then dated the day you watched the final episode.
       </small>
-      <label class="check">
+      <label class="check switch">
         <input type="checkbox" name="add_untracked" {% if settings.add_untracked %}checked{% endif %}>
         Add titles that are not on my AniList list yet
       </label>
-      <label class="check">
+      <label class="check switch">
         <input type="checkbox" name="set_dates" {% if settings.set_dates %}checked{% endif %}>
         Set start and finish dates
       </label>
-      <label class="check">
+      <label class="check switch">
         <input type="checkbox" name="skip_specials" {% if settings.skip_specials %}checked{% endif %}>
         Skip specials (Plex season 0)
       </label>
@@ -186,18 +198,18 @@
     </fieldset>
 
     <fieldset id="mal">
-      <legend>MyAnimeList</legend>
-      <label class="check">
+      <legend>{{ icon('repeat') }} MyAnimeList</legend>
+      <label class="check switch">
         <input type="checkbox" name="mal_sync_enabled" {% if settings.mal_sync_enabled %}checked{% endif %}>
         Mirror AniList to MyAnimeList
       </label>
       <small class="indent">One way only. Needs MyAnimeList <a href="/setup/mal">connected</a>.
         After turning it on, run the <a href="/mal#preview">full reconcile</a> once to bring existing entries across.</small>
-      <label class="check">
+      <label class="check switch">
         <input type="checkbox" name="mal_sync_score" {% if settings.mal_sync_score %}checked{% endif %}>
         Copy scores (AniList&rsquo;s score out of 100 becomes 1&ndash;10; an unscored entry never clears MyAnimeList&rsquo;s)
       </label>
-      <label class="check">
+      <label class="check switch">
         <input type="checkbox" name="mal_sync_dates" {% if settings.mal_sync_dates %}checked{% endif %}>
         Copy start and finish dates
       </label>
@@ -208,7 +220,7 @@
     </fieldset>
 
     <fieldset id="notifications">
-      <legend>Notifications</legend>
+      <legend>{{ icon('bell') }} Notifications</legend>
       <label>Webhook URL
         <input name="notify_webhook_url" value="{{ settings.notify_webhook_url }}"
                placeholder="https://discord.com/api/webhooks/... or https://ntfy.sh/your-topic" autocomplete="off">
@@ -230,15 +242,15 @@
           {% endfor %}
         </select>
       </label>
-      <label class="check">
+      <label class="check switch">
         <input type="checkbox" name="notify_on_rating" {% if settings.notify_on_rating %}checked{% endif %}>
         A finished series is ready to rate
       </label>
-      <label class="check">
+      <label class="check switch">
         <input type="checkbox" name="notify_on_review" {% if settings.notify_on_review %}checked{% endif %}>
         Something needs review (once per show and season)
       </label>
-      <label class="check">
+      <label class="check switch">
         <input type="checkbox" name="notify_on_token_error" {% if settings.notify_on_token_error %}checked{% endif %}>
         AniList or MyAnimeList needs you to sign in again
       </label>
@@ -246,7 +258,7 @@
       {% if notifications %}
       <ul class="notify-log small">
         {% for n in notifications %}
-        <li><span class="tag tag-{{ 'written' if n.result == 'sent' else ('error' if n.result == 'failed' else 'held') }}">{{ n.result }}</span>
+        <li><span class="tag tone-{{ 'ok' if n.result == 'sent' else ('bad' if n.result == 'failed' else 'warn') }}">{{ n.result }}</span>
           {{ n.title }} <span class="muted">{{ n.at|ago }}</span>
           {% if n.error %}<br><span class="bad-text">{{ n.error }}</span>{% endif %}</li>
         {% endfor %}
@@ -258,7 +270,7 @@
       <summary>Advanced: schedules and outages</summary>
 
       <fieldset>
-        <legend>Schedules</legend>
+        <legend>{{ icon('calendar') }} Schedules</legend>
         <label>Reconcile Plex history every
           <input type="number" name="reconcile_interval_hours" min="1" max="168"
                  value="{{ settings.reconcile_interval_hours }}"> hours
@@ -274,7 +286,7 @@
       </fieldset>
 
       <fieldset id="outages">
-        <legend>AniList outages and throttling</legend>
+        <legend>{{ icon('clock') }} AniList outages and throttling</legend>
         <label>Retry deferred events every
           <input type="number" name="anilist_retry_interval_minutes" min="1" max="240"
                  value="{{ settings.anilist_retry_interval_minutes }}"> minutes
@@ -293,17 +305,22 @@
 
     </details>
 
-    <button>Save settings</button>
+    <div class="form-actions">
+      <p>Saved together: safety, sync, MyAnimeList, notifications and advanced.</p>
+      <button>Save settings</button>
+    </div>
   </form>
 </section>
 
 <section class="panel" id="agent">
-  <h2>Agent access <span class="muted small">optional</span></h2>
-  <p class="muted small">Lets a personal agent (OpenClaw, Hermes, a script) act for you through a small API:
+  <div class="panel-head">
+    <div class="panel-title"><span class="panel-icon">{{ icon('bot') }}</span><h2>Agent access <span class="badge">optional</span></h2></div>
+  </div>
+  <p class="panel-lead">Lets a personal agent (OpenClaw, Hermes, a script) act for you through a small API:
     see what needs you, rate and complete a finished series, link or dismiss a review item. Every change
     goes through the same rules as this page, dry run included. It cannot change settings or turn dry run off.</p>
   {% if new_api_token %}
-    <div class="callout callout-token" role="alert">
+    <div class="callout callout-token tone-warn" role="alert">
       <p><strong>Your new API token.</strong> Copy it into your agent now: it is shown only this once, and only
         a hash of it is stored. Reloading this page would generate another one, so just
         <a href="/settings#agent">carry on</a> when you have it.</p>
@@ -314,7 +331,7 @@
     </div>
   {% endif %}
   {% if api_enabled %}
-    <p class="ok">On{% if api_last_used %} <span class="muted small">&middot; last used {{ api_last_used|int|timestamp|ago }}</span>{% else %} <span class="muted small">&middot; not used yet</span>{% endif %}</p>
+    <p class="status-line">{{ icon('check-circle') }} On{% if api_last_used %} <span class="muted small">&middot; last used {{ api_last_used|int|timestamp|ago }}</span>{% else %} <span class="muted small">&middot; not used yet</span>{% endif %}</p>
     <dl class="facts">
       <dt>Base URL</dt><dd><code>{{ api_base }}</code></dd>
       <dt>Auth</dt><dd><code>Authorization: Bearer &lt;token&gt;</code></dd>
@@ -334,8 +351,10 @@
 </section>
 
 <section class="panel" id="password">
-  <h2>Admin password</h2>
-  <p class="muted small">This app holds tokens to your accounts. Set a password even on a LAN.</p>
+  <div class="panel-head">
+    <div class="panel-title"><span class="panel-icon">{{ icon('lock') }}</span><h2>Admin password</h2></div>
+  </div>
+  <p class="panel-lead">This app holds tokens to your accounts. Set a password even on a LAN.</p>
   <form method="post" action="/settings/password">
     <label>{% if password_set %}New password{% else %}Password{% endif %}
       <input name="password" type="password" minlength="8" required>
@@ -344,4 +363,30 @@
   </form>
 </section>
 
+</div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Highlight the section in view in the side navigation.
+  (function () {
+    var links = Array.prototype.slice.call(document.querySelectorAll('.section-nav a'));
+    if (!('IntersectionObserver' in window) || !links.length) return;
+    var byId = {};
+    links.forEach(function (a) { byId[a.hash.slice(1)] = a; });
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        links.forEach(function (a) { a.classList.remove('active'); });
+        byId[entry.target.id].classList.add('active');
+      });
+    }, { rootMargin: '-15% 0px -70% 0px' });
+    Object.keys(byId).forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) observer.observe(el);
+    });
+  })();
+</script>
 {% endblock %}
