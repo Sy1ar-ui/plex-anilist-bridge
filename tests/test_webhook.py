@@ -132,6 +132,32 @@ def test_other_event_types_are_ignored(client):
     assert db.query_one("SELECT COUNT(*) AS n FROM event")["n"] == 0
 
 
+def _last_webhook():
+    return db.query_one("SELECT value FROM watermark WHERE name = 'last_webhook'")
+
+
+def test_any_event_from_my_account_proves_the_webhook_works(client):
+    """Plex scrobbles only at ~90% watched; a quick play/stop must still count."""
+    assert _last_webhook() is None
+    client.post(url(), json=PAUSE)
+    assert _last_webhook() is not None
+    # ...but only a scrobble is synced.
+    assert db.query_one("SELECT COUNT(*) AS n FROM event")["n"] == 0
+
+
+def test_another_accounts_events_never_mark_the_webhook_as_working(client):
+    client.post(url(), json=THEIRS)
+    client.post(url(), json={**THEIRS, "event": "media.pause"})
+    assert _last_webhook() is None
+
+
+def test_another_accounts_other_event_types_only_move_the_foreign_counter(client):
+    response = client.post(url(), json={**THEIRS, "event": "media.play"})
+    assert response.json() == {"status": "ignored", "reason": "other account"}
+    assert db.get_counter(routes_webhook.COUNTER_FOREIGN) == 1
+    assert db.get_counter(routes_webhook.COUNTER_IGNORED) == 0
+
+
 def test_a_wrong_path_token_is_a_404(client):
     response = client.post(url("deadbeef" * 4), json=MINE)
     assert response.status_code == 404

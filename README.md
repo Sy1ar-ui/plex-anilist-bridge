@@ -512,7 +512,7 @@ filter leaving no trace of another user's viewing.
 ### What is and is not verified
 
 **Tested.** CI runs the suite on CPython 3.12 for every pull request and every
-push to `main`: **457 tests at 0.6.0**, all offline. Mapping datasets come from
+push to `main`: **461 tests at 0.6.1**, all offline. Mapping datasets come from
 fixture slices cut from the real datasets, and every outside service is
 answered by a stub or a mocked HTTP transport. The image builds for
 **linux/amd64 and linux/arm64** on every pull request (without pushing) and is
@@ -560,14 +560,14 @@ they disagree. Bump all four in the PR, merge it, then tag **the merge commit
 on `main`**:
 
 ```bash
-git tag -a v0.6.0 -m "Release 0.6.0" && git push origin v0.6.0
+git tag -a v0.6.1 -m "Release 0.6.1" && git push origin v0.6.1
 ```
 
-The tag push is what publishes `ghcr.io/sy1ar-ui/plex-anilist-bridge:0.6.0`.
+The tag push is what publishes `ghcr.io/sy1ar-ui/plex-anilist-bridge:0.6.1`.
 The image workflow first runs `scripts/check_release_tag.py`, which fails the
 build unless the tag is exactly `v` plus the version in `app/config.py`, so a
 mistyped tag or one on the wrong commit fails instead of publishing. Run it
-yourself before pushing a tag: `python3 scripts/check_release_tag.py v0.6.0`.
+yourself before pushing a tag: `python3 scripts/check_release_tag.py v0.6.1`.
 Until it is pushed, the compose file and template on `main` name a tag that
 does not exist yet.
 

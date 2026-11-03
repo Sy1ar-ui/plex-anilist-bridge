@@ -8,15 +8,37 @@
   {% if last_webhook %}{{ icon('check-circle') }} <span>A webhook arrived {{ last_webhook|ago }} &mdash; this step is done.</span>
   {% else %}<span class="spinner" aria-hidden="true"></span> <span>Waiting for the first webhook&hellip; play and stop anything in Plex to send one.</span>{% endif %}
 </p>
+
 {% if not last_webhook %}
+<div id="webhook-foreign" class="callout tone-warn" role="status" {% if not foreign %}hidden{% endif %}>
+  {{ icon('alert') }}
+  <p><strong>Plex is reaching the bridge</strong>, but <span id="webhook-foreign-count">{{ foreign }}</span>
+     event(s) so far came from a different Plex account than the one chosen, so they were dropped.
+     Check <a href="/setup/account">Your account</a> is you.</p>
+</div>
+
+<details class="advanced">
+  <summary>Nothing arriving?</summary>
+  <ul class="small">
+    <li>The Plex Media Server itself sends webhooks, so this address must be reachable from the
+        machine or container running Plex, not just from your browser.</li>
+    <li>Webhooks need Plex Pass on the Plex account the URL is added to. Check the URL is still listed
+        under <em>Settings &rarr; Webhooks</em> and was saved.</li>
+    <li>The <a href="/system">System</a> page counts every delivery, including ignored ones.</li>
+  </ul>
+</details>
+
 <script>
   (function () {
-    var box = document.getElementById('webhook-wait');
+    var foreign = document.getElementById('webhook-foreign');
+    var foreignCount = document.getElementById('webhook-foreign-count');
     function check() {
       fetch('/setup/webhook/status', { credentials: 'same-origin' })
         .then(function (r) { return r.json(); })
         .then(function (data) {
-          if (data.received) { location.reload(); } else { setTimeout(check, 5000); }
+          if (data.received) { location.reload(); return; }
+          if (data.foreign) { foreignCount.textContent = data.foreign; foreign.hidden = false; }
+          setTimeout(check, 5000);
         })
         .catch(function () { setTimeout(check, 10000); });
     }
