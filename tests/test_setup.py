@@ -419,10 +419,21 @@ def test_mal_oauth_through_the_wizard(wizard, net):
 
 
 def test_the_webhook_step_reports_arrival(wizard):
-    assert wizard.get("/setup/webhook/status").json() == {"received": False, "at": None}
+    assert wizard.get("/setup/webhook/status").json() == {"received": False, "at": None, "foreign": 0}
     db.execute("INSERT INTO watermark (name, value) VALUES ('last_webhook', datetime('now'))")
     assert wizard.get("/setup/webhook/status").json()["received"] is True
     assert "this step is done" in wizard.get("/setup/webhook").text
+
+
+def test_the_webhook_step_says_when_only_another_account_is_arriving(wizard):
+    from app.web.routes_webhook import COUNTER_FOREIGN
+
+    assert 'id="webhook-foreign" class="callout tone-warn" role="status" hidden' in wizard.get("/setup/webhook").text
+    db.bump_counter(COUNTER_FOREIGN)
+    assert wizard.get("/setup/webhook/status").json()["foreign"] == 1
+    page = wizard.get("/setup/webhook").text
+    assert 'role="status" hidden' not in page
+    assert "came from a different Plex account" in page
 
 
 def test_finishing_sends_you_to_the_dashboard_from_then_on(wizard):

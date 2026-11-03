@@ -5,10 +5,14 @@ Two things are deliberate about the order of this handler:
 * The **secret path token** is checked first and a mismatch returns 404, so the
   endpoint does not advertise itself. Plex cannot send an auth header with a
   webhook, which is why the secret is in the path.
-* The **account filter** runs before anything else reads the payload. On a
-  shared server, an event from another user is dropped here: no enrichment, no
-  resolution, and nothing about what they watched is logged -- only a counter
-  moves. That is the whole point, so it is also what the tests assert.
+* The **account filter** runs before anything else reads the payload, for
+  every event type. On a shared server, an event from another user is dropped
+  here: no enrichment, no resolution, and nothing about what they watched is
+  logged -- only a counter moves. That is the whole point, so it is also what
+  the tests assert.
+
+Any event from the configured account marks the webhook as working
+(``last_webhook``); only ``media.scrobble`` goes on to be synced.
 
 Plex posts ``multipart/form-data`` with the JSON in a ``payload`` part; plain
 JSON bodies are accepted too, which is what makes the endpoint easy to exercise
@@ -74,12 +78,9 @@ async def plex_webhook_endpoint(
     if payload is None:
         return JSONResponse({"detail": "could not parse payload"}, status_code=400)
 
-    event_type = plex_webhook.event_of(payload)
-    if event_type != plex_webhook.SCROBBLE:
-        db.bump_counter(COUNTER_IGNORED)
-        return JSONResponse({"status": "ignored", "event": event_type})
-
     # --- the account filter, before anything else ------------------------
+    # It runs for every event type, so another user's play/pause/stop leaves
+    # exactly what their scrobble does: one counter, nothing else.
     configured = plex_client.configured_account_id()
     if not plex_webhook.is_own_account(payload, configured):
         db.bump_counter(COUNTER_FOREIGN)
@@ -88,16 +89,26 @@ async def plex_webhook_endpoint(
         log.info("event dropped: not the configured account")
         return JSONResponse({"status": "ignored", "reason": "other account"})
 
+    # Any delivery from the configured account proves the webhook works,
+    # whatever the event. Plex sends media.scrobble only once ~90% of an item
+    # has been watched, so waiting for one would leave the setup step stuck
+    # after a quick play and stop.
+    db.execute(
+        "INSERT INTO watermark (name, value) VALUES ('last_webhook', datetime('now'))"
+        " ON CONFLICT (name) DO UPDATE SET value = excluded.value"
+    )
+
+    event_type = plex_webhook.event_of(payload)
+    if event_type != plex_webhook.SCROBBLE:
+        db.bump_counter(COUNTER_IGNORED)
+        return JSONResponse({"status": "ignored", "event": event_type})
+
     parsed = plex_webhook.parse(payload)
     if parsed.media_kind not in ("episode", "movie"):
         db.bump_counter(COUNTER_IGNORED)
         return JSONResponse({"status": "ignored", "reason": f"media type {parsed.media_kind}"})
 
     db.bump_counter(COUNTER_ACCEPTED)
-    db.execute(
-        "INSERT INTO watermark (name, value) VALUES ('last_webhook', datetime('now'))"
-        " ON CONFLICT (name) DO UPDATE SET value = excluded.value"
-    )
 
     # Answer Plex immediately; do the work after the response.
     background.add_task(process_scrobble, parsed)
