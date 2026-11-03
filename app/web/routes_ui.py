@@ -396,6 +396,7 @@ async def save_account(
     plex_client.save_account(
         plex_client.PlexAccountInfo(int(account_id), account_name or str(account_id), None)
     )
+    await plex_client.learn_owner_plex_tv_id()
     return _redirect(
         "/settings#libraries",
         f"Only events from {account_name or account_id} will be processed",

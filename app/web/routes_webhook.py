@@ -23,6 +23,7 @@ by hand.
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 from datetime import UTC, datetime
@@ -123,7 +124,9 @@ async def plex_webhook_endpoint(
         db.bump_counter(COUNTER_IGNORED)
         return JSONResponse({"status": "ignored", "event": event_type})
 
-    parsed = plex_webhook.parse(payload)
+    # Recorded under the chosen account's own id whichever of its ids Plex
+    # sent, so the history reconcile recognises the play as already seen.
+    parsed = dataclasses.replace(plex_webhook.parse(payload), account_id=configured)
     if parsed.media_kind not in ("episode", "movie"):
         db.bump_counter(COUNTER_IGNORED)
         return JSONResponse({"status": "ignored", "reason": f"media type {parsed.media_kind}"})

@@ -126,15 +126,18 @@ def save_account(account: PlexAccountInfo) -> None:
 # account id instead, so every one of the owner's events was dropped as
 # another account's. Two ways in, both exact ids, never a guess:
 #
-# * The owner's plex.tv id, recorded at the Plex sign-in in setup, counts
-#   automatically -- but only while the owner (local id 1) is the chosen
-#   account and the signed-in account owns the server.
+# * The owner's plex.tv id counts automatically while the owner (local id 1)
+#   is the chosen account. It is recorded at the Plex sign-in in setup, or
+#   looked up from plex.tv with the server token (at startup and whenever an
+#   account is saved), and kept only when plex.tv says that account owns the
+#   connected server.
 # * Otherwise the bridge notices an event that is plainly the chosen
 #   account's -- by name, or by Plex's own owner flags -- remembers the id it
 #   carries as a *candidate*, and asks. Only once the user confirms it does
 #   the account filter accept that id too (the *alias*).
 # --------------------------------------------------------------------------
 SIGNED_IN_AS = "plex_signed_in_as"
+OWNER_PLEX_TV_ID = "plex_owner_plex_tv_id"
 WEBHOOK_ACCOUNT_ALIAS = "plex_webhook_account_alias"
 WEBHOOK_ACCOUNT_CANDIDATE = "plex_webhook_account_candidate"
 
@@ -160,12 +163,47 @@ def own_names() -> set[str]:
 
 
 def owner_plex_tv_id() -> int | None:
-    """The owner's plex.tv account id, when the owner is the chosen account."""
-    hint = settings_store.get(SIGNED_IN_AS, None) or {}
-    if not isinstance(hint, dict) or not hint.get("owned") or configured_account_id() != 1:
+    """The owner's plex.tv account id, when the owner is the chosen account.
+
+    Only for the server it was learned on: connecting a different server
+    makes it stale, and it is ignored until learned again.
+    """
+    if configured_account_id() != 1:
         return None
-    value = hint.get("id")
+    record = settings_store.get(OWNER_PLEX_TV_ID, None)
+    if not isinstance(record, dict) or record.get("machine_id") != stored_machine_id():
+        return None
+    value = record.get("id")
     return value if isinstance(value, int) and not isinstance(value, bool) and value > 1 else None
+
+
+def save_owner_plex_tv_id(account_id: int, machine_id: str) -> None:
+    settings_store.set(OWNER_PLEX_TV_ID, {"id": int(account_id), "machine_id": machine_id})
+
+
+async def learn_owner_plex_tv_id() -> int | None:
+    """Look up the owner's plex.tv id if it is needed and not yet known.
+
+    Uses the stored server token, and keeps the id only if plex.tv says that
+    account owns the connected server. Any failure leaves things as they are;
+    the "These look like yours" prompt still covers it.
+    """
+    from app.plex import account as plex_account
+
+    if configured_account_id() != 1 or owner_plex_tv_id() is not None:
+        return owner_plex_tv_id()
+    server, machine_id = stored_server(), stored_machine_id()
+    if not server or not machine_id:
+        return None
+    try:
+        found = await plex_account.owner_id_for(server[1], machine_id)
+    except Exception as exc:  # noqa: BLE001 - optional; never blocks anything
+        log.info("could not look up the owner's plex.tv id: %s", exc)
+        return None
+    if found:
+        save_owner_plex_tv_id(found, machine_id)
+        log.info("the server owner's webhooks may also carry plex.tv id %s", found)
+    return found
 
 
 def webhook_account_ids() -> set[int]:
