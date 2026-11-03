@@ -1,21 +1,39 @@
 {% extends "base.html" %}
+{% from "_ui.html" import icon, tone, monogram %}
 {% block title %}Dashboard &middot; Plex AniList Bridge{% endblock %}
 {% block content %}
 
 {% set state_label = {'ok': 'Healthy', 'degraded': 'Degraded', 'throttled': 'Throttled', 'down': 'Down'} %}
 {% set state_class = {'ok': 'ok', 'degraded': 'warn', 'throttled': 'warn', 'down': 'bad'} %}
 
+<header class="page-head">
+  <div>
+    <p class="eyebrow">Overview</p>
+    <h1>Dashboard</h1>
+    <p class="lead">What needs you, and what just happened.</p>
+  </div>
+</header>
+
 {% if setup_remaining %}
 <section class="panel setup">
   {% set required = setup_steps|rejectattr('optional')|list %}
-  <div class="card-head">
-    <h2>Finish setting up <span class="muted small">{{ required|selectattr('done')|list|length }} of {{ required|length }} done</span></h2>
-    <a class="button" href="/setup">Continue setup</a>
+  {% set done_count = required|selectattr('done')|list|length %}
+  <div class="panel-head">
+    <div class="panel-title">
+      <span class="panel-icon">{{ icon('sliders') }}</span>
+      <h2>Finish setting up</h2>
+    </div>
+    <a class="button" href="/setup">Continue setup {{ icon('arrow-right', 'icon-sm') }}</a>
+  </div>
+  <div class="setup-progress">
+    <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="{{ required|length }}" aria-valuenow="{{ done_count }}"
+         aria-label="Setup progress"><span style="width: {{ (done_count / required|length * 100) if required else 0 }}%"></span></div>
+    <span>{{ done_count }} of {{ required|length }} done</span>
   </div>
   <ol class="checklist">
     {% for step in required %}
     <li class="{{ 'done' if step.done else 'todo' }}">
-      <span class="check-mark" aria-hidden="true">{{ '✓' if step.done else '' }}</span>
+      <span class="check-mark" aria-hidden="true">{% if step.done %}{{ icon('check') }}{% endif %}</span>
       {% if step.done %}<span>{{ step.label }}</span>
       {% else %}<a href="{{ step.href }}">{{ step.label }}</a>{% endif %}
     </li>
@@ -33,13 +51,19 @@
 
 {% if ratings %}
 <section class="panel rate" id="rate">
-  <div class="card-head">
-    <h2>Ready to rate</h2>
-    <span class="muted small">Completed on AniList once rated, dated the day you finished</span>
+  <div class="panel-head">
+    <div class="panel-title">
+      <span class="panel-icon tone-violet">{{ icon('star') }}</span>
+      <div>
+        <h2>Ready to rate</h2>
+        <span class="muted small">Completed on AniList once rated, dated the day you finished</span>
+      </div>
+    </div>
   </div>
   <ul class="rate-list">
     {% for item in ratings %}
     <li class="rate-item">
+      {{ monogram(item.display_title) }}
       <div class="rate-what">
         <a class="rate-title" href="https://anilist.co/anime/{{ item.anilist_id }}" target="_blank" rel="noreferrer">{{ item.display_title }}</a>
         <span class="muted small">
@@ -47,7 +71,7 @@
         </span>
         {% if item.status == 'queued' %}
           <span class="small">
-            <span class="tag tag-deferred">{% if item.score is not none %}rated {{ '%g'|format(item.score) }}{% else %}no rating{% endif %}</span>
+            <span class="tag tone-info">{% if item.score is not none %}rated {{ '%g'|format(item.score) }}{% else %}no rating{% endif %}</span>
             waiting for AniList{% if item.next_attempt_at %}, retry {{ item.next_attempt_at|ago }}{% endif %}
           </span>
         {% elif item.last_error %}
@@ -63,9 +87,9 @@
                  {% if item.score is not none %}value="{{ '%g'|format(item.score) }}"{% endif %}>
           <span class="muted">/ 10</span>
         </label>
-        <button name="action" value="rate">Complete</button>
+        <button name="action" value="rate">{{ icon('check', 'icon-sm') }} Complete</button>
         <details class="more">
-          <summary aria-label="More options">&hellip;</summary>
+          <summary aria-label="More options">{{ icon('more') }}</summary>
           <div class="more-menu">
             <button name="action" value="no_rating" class="link" formnovalidate>Complete without rating</button>
             <button name="action" value="dismiss" class="link" formnovalidate
@@ -80,71 +104,90 @@
 </section>
 {% endif %}
 
+{# Each tile: a tone and a value. #}
+{% set plex_tone = 'ok' if plex_configured and plex_account else ('warn' if plex_configured else 'bad') %}
+{% if anilist.token_broken %}
+  {% set anilist_tone, anilist_value = 'bad', 'Token rejected' %}
+{% elif anilist.token_status == 'absent' %}
+  {% set anilist_tone, anilist_value = 'bad', 'Not connected' %}
+{% else %}
+  {% set anilist_tone = state_class[anilist.state] %}
+  {% set anilist_value = state_label[anilist.state] ~ ((' · ' ~ anilist.deferred ~ ' deferred') if anilist.deferred else '') %}
+{% endif %}
+{% set datasets_tone = 'ok' if datasets_ok else ('warn' if datasets else 'bad') %}
+
 <section class="status-strip" aria-label="Service status">
-  <a class="status-tile" href="/settings#plex">
-    <span class="dot dot-{{ 'ok' if plex_configured and plex_account else ('warn' if plex_configured else 'bad') }}"></span>
-    <span class="status-name">Plex</span>
-    <span class="status-value">
-      {% if not plex_configured %}Not configured
-      {% elif not plex_account %}No account chosen
-      {% else %}{{ plex_account.name }}{% endif %}
+  <a class="status-tile tone-{{ plex_tone }}" href="/settings#plex">
+    <span class="status-icon">{{ icon('play') }}</span>
+    <span class="status-body">
+      <span class="status-name">Plex</span>
+      <span class="status-value">
+        {% if not plex_configured %}Not configured
+        {% elif not plex_account %}No account chosen
+        {% else %}{{ plex_account.name }}{% endif %}
+      </span>
     </span>
+    <span class="status-dot" aria-hidden="true"></span>
   </a>
-  <a class="status-tile" href="/system#anilist">
-    {% if anilist.token_broken %}
-      <span class="dot dot-bad"></span>
+  <a class="status-tile tone-{{ anilist_tone }}" href="/system#anilist">
+    <span class="status-icon">{{ icon('cloud') }}</span>
+    <span class="status-body">
       <span class="status-name">AniList</span>
-      <span class="status-value">Token rejected</span>
-    {% elif anilist.token_status == 'absent' %}
-      <span class="dot dot-bad"></span>
-      <span class="status-name">AniList</span>
-      <span class="status-value">Not connected</span>
-    {% else %}
-      <span class="dot dot-{{ state_class[anilist.state] }}"></span>
-      <span class="status-name">AniList</span>
-      <span class="status-value">{{ state_label[anilist.state] }}{% if anilist.deferred %} &middot; {{ anilist.deferred }} deferred{% endif %}</span>
-    {% endif %}
+      <span class="status-value">{{ anilist_value }}</span>
+    </span>
+    <span class="status-dot" aria-hidden="true"></span>
   </a>
-  <a class="status-tile" href="/system#datasets">
-    <span class="dot dot-{{ 'ok' if datasets_ok else ('warn' if datasets else 'bad') }}"></span>
-    <span class="status-name">Datasets</span>
-    <span class="status-value">{% if not datasets %}Not loaded{% elif datasets_ok %}Up to date{% else %}Needs attention{% endif %}</span>
+  <a class="status-tile tone-{{ datasets_tone }}" href="/system#datasets">
+    <span class="status-icon">{{ icon('database') }}</span>
+    <span class="status-body">
+      <span class="status-name">Datasets</span>
+      <span class="status-value">{% if not datasets %}Not loaded{% elif datasets_ok %}Up to date{% else %}Needs attention{% endif %}</span>
+    </span>
+    <span class="status-dot" aria-hidden="true"></span>
   </a>
-  <a class="status-tile" href="/system#webhook">
-    <span class="dot dot-{{ 'ok' if last_webhook else 'warn' }}"></span>
-    <span class="status-name">Webhook</span>
-    <span class="status-value">{% if last_webhook %}{{ last_webhook|ago }}{% else %}Nothing received yet{% endif %}</span>
+  <a class="status-tile tone-{{ 'ok' if last_webhook else 'warn' }}" href="/system#webhook">
+    <span class="status-icon">{{ icon('zap') }}</span>
+    <span class="status-body">
+      <span class="status-name">Webhook</span>
+      <span class="status-value">{% if last_webhook %}{{ last_webhook|ago }}{% else %}Nothing received yet{% endif %}</span>
+    </span>
+    <span class="status-dot" aria-hidden="true"></span>
   </a>
 </section>
 
 <section class="panel">
-  <div class="card-head">
-    <h2>Recent activity</h2>
-    <a href="/activity">View all &rarr;</a>
+  <div class="panel-head">
+    <div class="panel-title">
+      <span class="panel-icon">{{ icon('activity') }}</span>
+      <h2>Recent activity</h2>
+    </div>
+    <a href="/activity" class="why">View all {{ icon('arrow-right') }}</a>
   </div>
   {% if day_counts %}
   <nav class="chips" aria-label="Last 24 hours">
-    <span class="muted small">Last 24 h</span>
+    <span class="chips-label">Last 24 h</span>
     {% for s in ['written', 'would_write', 'awaiting_rating', 'no_change', 'deferred', 'held', 'unmatched', 'skipped', 'error'] %}
       {% if day_counts.get(s) %}
-      <a href="/activity?status={{ s }}" class="chip chip-{{ s }}">{{ s|replace('_', ' ') }} <span>{{ day_counts[s] }}</span></a>
+      <a href="/activity?status={{ s }}" class="chip chip-{{ s }} tone-{{ tone(s) }}">{{ s|replace('_', ' ') }} <span>{{ day_counts[s] }}</span></a>
       {% endif %}
     {% endfor %}
   </nav>
   {% endif %}
   {% if recent %}
-  <table class="log compact">
-    <tbody>
+  <ul class="feed">
     {% for e in recent %}
-    <tr class="row-{{ e.status }}">
-      <td class="nowrap muted small">{{ (e.viewed_at or e.received_at)|ago }}</td>
-      <td><strong>{{ e.show_title or 'unknown' }}</strong>
-        {% if e.media_kind == 'episode' %}<span class="muted">S{{ '%02d' % (e.season or 0) }}E{{ '%02d' % (e.episode or 0) }}</span>{% endif %}</td>
-      <td class="nowrap"><a href="/activity/{{ e.id }}" class="tag tag-{{ e.status }}" title="Why?">{{ e.status|replace('_', ' ') }}</a></td>
-    </tr>
+    <li class="feed-item row-{{ e.status }} tone-{{ tone(e.status) }}">
+      <div class="feed-main">
+        <span class="feed-title">
+          <span>{{ e.show_title or 'unknown' }}</span>
+          {% if e.media_kind == 'episode' %}<span class="ep-code">S{{ '%02d' % (e.season or 0) }}E{{ '%02d' % (e.episode or 0) }}</span>{% endif %}
+        </span>
+        <span class="feed-time">{{ (e.viewed_at or e.received_at)|ago }}</span>
+      </div>
+      <a href="/activity/{{ e.id }}" class="tag tag-{{ e.status }} tone-{{ tone(e.status) }}" title="Why?">{{ e.status|replace('_', ' ') }}</a>
+    </li>
     {% endfor %}
-    </tbody>
-  </table>
+  </ul>
   {% else %}
   <p class="muted">No events yet. Watch something on the configured account, or run a reconcile from <a href="/system#jobs">System</a>.</p>
   {% endif %}

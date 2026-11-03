@@ -1,3 +1,4 @@
+{% from "_ui.html" import icon %}
 <h2>{% if remaining %}Almost there{% else %}All set{% endif %}</h2>
 {% if remaining %}
   <p>Still to do:</p>
@@ -6,11 +7,11 @@
   </ul>
   <p class="muted">You can finish these later from the dashboard.</p>
 {% else %}
-  <p>Everything is connected.</p>
+  <p class="status-line">{{ icon('check-circle') }} Everything is connected.</p>
 {% endif %}
-<p><strong>Dry run is {{ 'on' if dry_run else 'off' }}.</strong>
+<p class="callout {{ 'tone-accent' if dry_run else 'tone-ok' }}">{{ icon('flask') }} <span><strong>Dry run is {{ 'on' if dry_run else 'off' }}.</strong>
   {% if dry_run %}Nothing is written to AniList yet: each event shows what <em>would</em> have been written.
-  Watch the Activity page for a while, then turn it off in <a href="/settings#behaviour">Settings</a>.{% endif %}</p>
+  Watch the Activity page for a while, then turn it off in <a href="/settings#behaviour">Settings</a>.{% endif %}</span></p>
 <form method="post" action="/setup/finish">
-  <button>Go to the dashboard</button>
+  <button>Go to the dashboard {{ icon('arrow-right', 'icon-sm') }}</button>
 </form>

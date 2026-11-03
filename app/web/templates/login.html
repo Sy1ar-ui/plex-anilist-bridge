@@ -1,12 +1,19 @@
 {% extends "base.html" %}
+{% from "_ui.html" import icon, logo %}
 {% block title %}Sign in &middot; Plex AniList Bridge{% endblock %}
-{% block content %}
-<section class="panel narrow">
-  <h1>Sign in</h1>
-  {% if error %}<p class="bad">{{ error }}</p>{% endif %}
-  <form method="post" action="/login">
-    <label>Password <input name="password" type="password" autofocus required></label>
-    <button>Sign in</button>
-  </form>
-</section>
+{% block shell %}
+<main class="auth" id="main">
+  <section class="auth-card">
+    {{ logo() }}
+    <p class="eyebrow">Plex &rarr; AniList Bridge</p>
+    <h1>Sign in</h1>
+    <p class="muted">Enter the admin password to manage the bridge.</p>
+    {% if error %}<div class="notice tone-bad" role="alert">{{ icon('alert-circle') }}<p>{{ error }}</p></div>{% endif %}
+    <form method="post" action="/login">
+      <label>Password <input name="password" type="password" autofocus required autocomplete="current-password"></label>
+      <button>{{ icon('lock', 'icon-sm') }} Sign in</button>
+    </form>
+    <p class="auth-foot">plex-anilist-bridge {{ app_version }}</p>
+  </section>
+</main>
 {% endblock %}

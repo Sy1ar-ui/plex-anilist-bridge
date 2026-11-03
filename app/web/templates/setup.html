@@ -1,21 +1,27 @@
 {% extends "base.html" %}
+{% from "_ui.html" import icon %}
 {% block title %}Setup &middot; Plex AniList Bridge{% endblock %}
 {% block content %}
 
 <div class="setup-layout">
-  <nav class="setup-steps" aria-label="Setup steps">
+  <nav class="setup-steps panel" aria-label="Setup steps">
+    <p class="eyebrow">Get started</p>
     <h1>Setup</h1>
+    <p class="lead">A few minutes, done once. Every step can be changed later in Settings.</p>
     <ol>
       {% for s in steps %}
       <li class="{{ 'here' if s.key == step }} {{ 'done' if s.done }}">
         <a href="{{ s.href }}" {% if s.key == step %}aria-current="step"{% endif %}>
-          <span class="check-mark" aria-hidden="true">{{ '✓' if s.done else loop.index }}</span>
-          <span>{{ s.title }}{% if s.optional %} <span class="muted small">optional</span>{% endif %}</span>
+          <span class="check-mark" aria-hidden="true">{% if s.done %}{{ icon('check') }}{% else %}{{ loop.index }}{% endif %}</span>
+          <span class="setup-step-label">{{ s.title }}{% if s.optional %} <span class="muted small">optional</span>{% endif %}</span>
         </a>
       </li>
       {% endfor %}
       <li class="{{ 'here' if step == 'done' }}">
-        <a href="/setup/done"><span class="check-mark" aria-hidden="true">&rarr;</span><span>Finish</span></a>
+        <a href="/setup/done" {% if step == 'done' %}aria-current="step"{% endif %}>
+          <span class="check-mark" aria-hidden="true">{{ icon('arrow-right') }}</span>
+          <span class="setup-step-label">Finish</span>
+        </a>
       </li>
     </ol>
     <form method="post" action="/setup/finish">
@@ -29,7 +35,7 @@
     {% if next_key and step != 'done' %}
     <div class="setup-nav">
       <a href="/setup/{{ next_key }}" class="{{ 'button' if current and current.done else 'muted' }}">
-        {% if current and current.done %}Next &rarr;{% else %}Skip this step{% endif %}
+        {% if current and current.done %}Next {{ icon('arrow-right', 'icon-sm') }}{% else %}Skip this step{% endif %}
       </a>
     </div>
     {% endif %}

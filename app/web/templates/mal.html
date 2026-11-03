@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_ui.html" import icon, tone %}
 {% block title %}MyAnimeList &middot; Plex AniList Bridge{% endblock %}
 {% block content %}
 
@@ -15,16 +16,19 @@
   </ul>
 {%- endmacro %}
 
-<div class="page-head">
-  <h1>MyAnimeList</h1>
-  <p class="muted">A one-way mirror of AniList. Nothing is ever deleted from MyAnimeList,
-    notes and tags are never written, and progress is only lowered when you approve it below.</p>
-</div>
+<header class="page-head">
+  <div>
+    <a class="back" href="/system#mal">{{ icon('arrow-left') }} back to system</a>
+    <h1>MyAnimeList</h1>
+    <p class="lead">A one-way mirror of AniList. Nothing is ever deleted from MyAnimeList,
+      notes and tags are never written, and progress is only lowered when you approve it below.</p>
+  </div>
+</header>
 
 <section class="panel">
-  <div class="card-head">
-    <h2>Mirror</h2>
-    {% if blocked %}<span class="badge badge-warn">Off</span>{% else %}<span class="badge badge-ok">On</span>{% endif %}
+  <div class="panel-head">
+    <div class="panel-title"><span class="panel-icon">{{ icon('repeat') }}</span><h2>Mirror</h2></div>
+    {% if blocked %}<span class="badge badge-warn tone-warn">Off</span>{% else %}<span class="badge badge-ok tone-ok">On</span>{% endif %}
   </div>
   {% if blocked %}
     <p>{{ blocked|capitalize }}.
@@ -40,12 +44,14 @@
     <dt>Account</dt><dd>{% if mal_token.present %}{{ mal_token.account_name or 'connected' }}{% if mal_token.expires_at %} <span class="muted small">renewed automatically while the mirror runs; valid until {{ mal_token.expires_at|day }}</span>{% endif %}{% else %}<span class="muted">not connected</span>{% endif %}</dd>
   </dl>
   <form method="post" action="/mal/poll">
-    <button class="secondary" {% if blocked or running %}disabled{% endif %}>Mirror recent changes now</button>
+    <button class="secondary" {% if blocked or running %}disabled{% endif %}>{{ icon('refresh', 'icon-sm') }} Mirror recent changes now</button>
   </form>
 </section>
 
 <section class="panel" id="preview">
-  <h2>Full reconcile</h2>
+  <div class="panel-head">
+    <div class="panel-title"><span class="panel-icon">{{ icon('git-branch') }}</span><h2>Full reconcile</h2></div>
+  </div>
   {% if not plan %}
     <p>Compares your whole AniList list with your whole MyAnimeList list and shows every difference.
        Nothing is written until you tick what to change and apply it. Use this once when you turn
@@ -65,7 +71,7 @@
       {% set rows = plan_items[kind] %}
       {% if rows %}
       <details class="plan-group plan-{{ kind }}" {% if kind != 'add' or rows|length <= 30 %}open{% endif %}>
-        <summary><strong>{{ title }}</strong> <span class="tag">{{ rows|length }}</span>
+        <summary><strong>{{ title }}</strong> <span class="tag tone-{{ 'warn' if kind == 'lower' else 'accent' }}">{{ rows|length }}</span>
           <span class="muted small">{{ hint }}</span></summary>
         <label class="check small select-all"><input type="checkbox" data-group="{{ kind }}"
           {% if kind != 'lower' %}checked{% endif %}> all</label>
@@ -78,7 +84,7 @@
                      {% if item.decision in ('applied', 'would_write') %}disabled{% endif %}>
               <span>
                 <a href="https://myanimelist.net/anime/{{ item.mal_id }}" target="_blank" rel="noreferrer">{{ item.title }}</a>
-                {% if item.decision in ('applied', 'would_write', 'error') %}<span class="tag tag-{{ 'error' if item.decision == 'error' else 'written' }}">{{ item.decision|replace('_', ' ') }}</span>{% endif %}
+                {% if item.decision in ('applied', 'would_write', 'error') %}<span class="tag tone-{{ 'bad' if item.decision == 'error' else 'ok' }}">{{ item.decision|replace('_', ' ') }}</span>{% endif %}
                 {{ changes(item) }}
               </span>
             </label>
@@ -95,7 +101,7 @@
         <button class="secondary" formaction="/mal/reconcile/{{ plan.id }}/discard" formnovalidate>Discard preview</button>
       </div>
       {% else %}
-      <p class="ok">Nothing to change: the lists match.</p>
+      <p class="status-line">{{ icon('check-circle') }} Nothing to change: the lists match.</p>
       <button class="secondary" formaction="/mal/reconcile/{{ plan.id }}/discard">Close</button>
       {% endif %}
     </form>
@@ -119,17 +125,19 @@
 </section>
 
 <section class="panel" id="log">
-  <h2>Recent</h2>
+  <div class="panel-head">
+    <div class="panel-title"><span class="panel-icon">{{ icon('activity') }}</span><h2>Recent</h2></div>
+  </div>
   {% if log_rows %}
   <div class="table-wrap">
   <table class="log compact">
     <tbody>
     {% for r in log_rows %}
-    <tr class="row-{{ r.outcome }}">
+    <tr class="row-{{ r.outcome }} tone-{{ tone(r.outcome) }}">
       <td class="nowrap muted small">{{ r.at|ago }}</td>
       <td><strong>{{ r.title or ('MyAnimeList ' ~ r.mal_id) }}</strong>
         <div class="small clamp" title="{{ r.detail }}">{{ r.detail }}</div></td>
-      <td class="nowrap"><span class="tag tag-{{ r.outcome }}">{{ r.outcome|replace('_', ' ') }}</span>
+      <td class="nowrap"><span class="tag tag-{{ r.outcome }} tone-{{ tone(r.outcome) }}">{{ r.outcome|replace('_', ' ') }}</span>
         {% if r.source == 'reconcile' %}<span class="tag">reconcile</span>{% endif %}</td>
     </tr>
     {% endfor %}

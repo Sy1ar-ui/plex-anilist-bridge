@@ -1,3 +1,4 @@
+{% from "_ui.html" import icon %}
 <h2>Plex server</h2>
 {% if plex_error %}<p class="bad-text">{{ plex_error }}</p>{% endif %}
 
@@ -17,8 +18,8 @@
                  {% if server.best and server.best.uri == c.uri %}checked{% endif %} required>
           <code>{{ c.uri }}</code>
           <span class="small">{{ c.label }}</span>
-          {% if c.ok %}<span class="tag tag-ok">works{% if c.latency_ms is not none %} &middot; {{ c.latency_ms }} ms{% endif %}</span>
-          {% else %}<span class="tag tag-error" title="{{ c.error }}">{{ c.error or 'no answer' }}</span>{% endif %}
+          {% if c.ok %}<span class="tag tag-ok tone-ok">works{% if c.latency_ms is not none %} &middot; {{ c.latency_ms }} ms{% endif %}</span>
+          {% else %}<span class="tag tag-error tone-bad" title="{{ c.error }}">{{ c.error or 'no answer' }}</span>{% endif %}
         </label>
       </li>
       {% endfor %}
@@ -46,7 +47,7 @@
 
 {% else %}
   {% if current_server %}
-  <p class="ok">Connected to {{ current_server.name or 'your server' }} <span class="muted small">{{ current_server.base_url }}</span></p>
+  <p class="status-line">{{ icon('check-circle') }} Connected to {{ current_server.name or 'your server' }} <span class="muted small">{{ current_server.base_url }}</span></p>
   {% endif %}
   <p>Sign in with your Plex account and the bridge will find your servers. Nothing is ever written to Plex;
      it only reads which show an episode belongs to, because Plex webhooks leave that out.</p>
