@@ -1,0 +1,97 @@
+name: Release
+
+# Cut a release from the head of main, with nothing typed by hand:
+#
+#   1. read the version from app/config.py and refuse if it is already tagged
+#      (a release needs a version bump, merged first);
+#   2. run the tests on that commit;
+#   3. build and publish ghcr.io/<repo>:<version> and :<major>.<minor>;
+#   4. tag that exact commit v<version> and open a draft GitHub release.
+#
+# Start it from Actions -> Release -> Run workflow, on main. The tag is pushed
+# with GITHUB_TOKEN, which does not trigger other workflows, so nothing builds
+# twice. Publishing the draft does not create a tag, so it triggers nothing.
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      # A release is always cut from main, never from a branch or an old commit.
+      - name: Refuse anything but main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Run the Release workflow on main, not $GITHUB_REF."
+          exit 1
+
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Read the version and check it is not released yet
+        id: version
+        run: |
+          version="$(python3 scripts/check_release_tag.py --print-version)"
+          python3 scripts/check_release_tag.py "v$version"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" > /dev/null; then
+            echo "::error::v$version is already tagged. Bump the version in a pull request, merge it, then run this again."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Releasing $version from $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Run tests
+        run: pytest
+
+  image:
+    needs: prepare
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/docker.yml
+    with:
+      version: ${{ needs.prepare.outputs.version }}
+
+  publish:
+    # Only once the image is published, so a tag always has an image behind it.
+    needs: [prepare, image]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Tag this commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "v$VERSION" "$GITHUB_SHA" -m "Release $VERSION"
+          git push origin "refs/tags/v$VERSION"
+
+      - name: Open a draft release
+        run: |
+          gh release create "v$VERSION" --verify-tag --draft \
+            --title "v$VERSION" --generate-notes
+          {
+            echo "Published ghcr.io/${GITHUB_REPOSITORY,,}:$VERSION and tagged v$VERSION at $GITHUB_SHA."
+            echo "A draft release is waiting: edit its notes, then publish it."
+          } >> "$GITHUB_STEP_SUMMARY"

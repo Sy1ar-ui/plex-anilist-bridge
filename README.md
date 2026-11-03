@@ -516,7 +516,7 @@ push to `main`: **461 tests at 0.6.1**, all offline. Mapping datasets come from
 fixture slices cut from the real datasets, and every outside service is
 answered by a stub or a mocked HTTP transport. The image builds for
 **linux/amd64 and linux/arm64** on every pull request (without pushing) and is
-published from `main` and release tags, so the `setpriv` privilege drop and the
+published from `main` and the Release workflow, so the `setpriv` privilege drop and the
 dependency-free healthcheck survive a real build. During development the app
 was also run locally and every page driven in a headless browser, at desktop
 and phone widths.
@@ -556,20 +556,22 @@ curl -s localhost:8787/health
 The version is in four places: `app/config.py`, `pyproject.toml`,
 `docker-compose.yml` and `unraid-template.xml`. The last two pin the exact
 image tag, since nothing here uses `:latest`. `tests/test_version.py` fails if
-they disagree. Bump all four in the PR, merge it, then tag **the merge commit
-on `main`**:
+they disagree. Bump all four in a PR and merge it.
 
-```bash
-git tag -a v0.6.1 -m "Release 0.6.1" && git push origin v0.6.1
-```
+Then cut the release from GitHub: **Actions → Release → Run workflow**, on
+`main`. The workflow reads the version from `app/config.py`, refuses if it is
+already tagged, runs the tests, publishes
+`ghcr.io/sy1ar-ui/plex-anilist-bridge:<version>` and `:<major>.<minor>`, then
+tags that exact commit `v<version>` and opens a draft release. Edit the draft's
+notes and publish it.
 
-The tag push is what publishes `ghcr.io/sy1ar-ui/plex-anilist-bridge:0.6.1`.
-The image workflow first runs `scripts/check_release_tag.py`, which fails the
-build unless the tag is exactly `v` plus the version in `app/config.py`, so a
-mistyped tag or one on the wrong commit fails instead of publishing. Run it
-yourself before pushing a tag: `python3 scripts/check_release_tag.py v0.6.1`.
-Until it is pushed, the compose file and template on `main` name a tag that
-does not exist yet.
+**Do not push `v*` tags by hand.** GitHub runs a workflow from the tagged
+commit, so a tag pushed onto an old commit runs that commit's old workflow,
+whatever `main` now says. That is how v0.6.0 and v0.6.1 were first tagged on
+the 0.1.1 commit and published 0.1.1 under both names. The image workflow no
+longer publishes on tag pushes at all, and `tests/test_release_tag.py` fails if
+any workflow starts to. Until the Release workflow has run, the compose file
+and template on `main` name an image tag that does not exist yet.
 
 ### Layout
 

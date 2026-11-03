@@ -9,6 +9,11 @@ runs before the build and fails it in both cases.
 
     python3 scripts/check_release_tag.py v0.4.0          # check a tag name here
     python3 scripts/check_release_tag.py                 # uses $GITHUB_REF_NAME
+    python3 scripts/check_release_tag.py --print-version # print the version
+
+Releases are cut by the Release workflow (.github/workflows/release.yml),
+which reads the version with --print-version and creates the tag itself, so a
+tag is never typed by hand on whatever commit a local clone happens to be on.
 
 No dependencies, so it runs on a bare CI runner.
 """
@@ -44,6 +49,9 @@ def check(tag: str, version: str) -> str | None:
 
 
 def main(argv: list[str]) -> int:
+    if argv[1:] == ["--print-version"]:
+        print(app_version())
+        return 0
     tag = argv[1] if len(argv) > 1 else os.environ.get("GITHUB_REF_NAME", "")
     if not tag:
         print("usage: check_release_tag.py <tag>", file=sys.stderr)
