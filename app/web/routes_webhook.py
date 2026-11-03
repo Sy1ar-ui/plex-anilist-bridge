@@ -23,6 +23,7 @@ by hand.
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 from datetime import UTC, datetime
@@ -94,7 +95,7 @@ async def plex_webhook_endpoint(
     # It runs for every event type, so another user's play/pause/stop leaves
     # exactly what their scrobble does: one counter, nothing else.
     configured = plex_client.configured_account_id()
-    if not plex_webhook.is_own_account(payload, configured, plex_client.webhook_account_alias()):
+    if not plex_webhook.is_own_account(payload, configured, plex_client.webhook_account_ids()):
         db.bump_counter(COUNTER_FOREIGN)
         # If it plainly is the chosen account under another id, remember
         # that id -- and only the id -- so the user can confirm it.
@@ -123,7 +124,9 @@ async def plex_webhook_endpoint(
         db.bump_counter(COUNTER_IGNORED)
         return JSONResponse({"status": "ignored", "event": event_type})
 
-    parsed = plex_webhook.parse(payload)
+    # Recorded under the chosen account's own id whichever of its ids Plex
+    # sent, so the history reconcile recognises the play as already seen.
+    parsed = dataclasses.replace(plex_webhook.parse(payload), account_id=configured)
     if parsed.media_kind not in ("episode", "movie"):
         db.bump_counter(COUNTER_IGNORED)
         return JSONResponse({"status": "ignored", "reason": f"media type {parsed.media_kind}"})

@@ -78,19 +78,20 @@ def event_of(payload: dict[str, Any]) -> str:
 
 
 def is_own_account(
-    payload: dict[str, Any], configured_account_id: int | None, alias: int | None = None
+    payload: dict[str, Any], configured_account_id: int | None, also: set[int] | None = None
 ) -> bool:
     """True only when this event belongs to the configured account.
 
-    ``alias`` is a second id the user has confirmed as theirs (see
-    ``plex.client`` on the webhook account id). If no account has been
-    configured yet nothing is accepted, because accepting everything on a
-    shared server is the exact failure this guards against.
+    ``also`` holds other exact ids the chosen account's webhooks carry: the
+    owner's plex.tv id, or an id the user confirmed (see ``plex.client`` on
+    the webhook account id). If no account has been configured yet nothing is
+    accepted, because accepting everything on a shared server is the exact
+    failure this guards against.
     """
     if configured_account_id is None:
         return False
     seen = account_id_of(payload)
-    return seen is not None and seen in {configured_account_id, alias}
+    return seen is not None and (seen == configured_account_id or seen in (also or set()))
 
 
 def evidence_it_is_mine(

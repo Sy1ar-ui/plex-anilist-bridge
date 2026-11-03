@@ -181,6 +181,10 @@ async def step_plex_choose(_: None = Depends(require_session), server_id: str = 
     who = pending.get("user") or {}
     settings_store.set(_SIGNED_IN_AS, {"username": who.get("username"), "title": who.get("title"),
                                        "owned": server.owned})
+    # Some servers send the owner's webhooks under the owner's plex.tv id
+    # rather than the local id 1 (see plex.client, the webhook account id).
+    if server.owned and isinstance(who.get("id"), int) and info.get("machine_id"):
+        plex_client.save_owner_plex_tv_id(who["id"], info["machine_id"])
     plex_account.forget()   # the account token is not kept; the server token is
     return _redirect("/setup/account", f"Connected to {info.get('name') or server.name}.", "ok")
 
@@ -227,6 +231,7 @@ async def step_account_save(_: None = Depends(require_session), account_id: int 
     plex_client.save_account(
         plex_client.PlexAccountInfo(int(account_id), account_name or str(account_id), None)
     )
+    await plex_client.learn_owner_plex_tv_id()
     return _redirect("/setup/libraries", f"Only {account_name or account_id}'s viewing will be synced.", "ok")
 
 

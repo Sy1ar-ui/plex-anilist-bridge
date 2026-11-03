@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from app import auth, config, db, repo, settings_store, tokens
 from app.datasets import refresh as dataset_refresh
 from app.logging_setup import setup_logging
+from app.plex import client as plex_client
 from app.web import routes_api, routes_mal, routes_setup, routes_ui, routes_webhook
 
 log = logging.getLogger(__name__)
@@ -65,6 +66,10 @@ async def lifespan(app: FastAPI):
 
     scheduler.start()
 
+    # Installs set up before it was recorded: find the owner's plex.tv id,
+    # which some servers send instead of 1 in the owner's webhooks.
+    owner_lookup = asyncio.create_task(plex_client.learn_owner_plex_tv_id())
+
     task: asyncio.Task | None = None
     if dataset_refresh.needs_initial_load():
         log.info("no mapping datasets cached yet; fetching in the background")
@@ -88,6 +93,8 @@ async def lifespan(app: FastAPI):
         with contextlib.suppress(Exception):
             await asyncio.wait_for(notify.drain(), timeout=5)
         scheduler.shutdown()
+        if not owner_lookup.done():
+            owner_lookup.cancel()
         if task is not None and not task.done():
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -122,8 +129,6 @@ def create_app() -> FastAPI:
         except Exception as exc:  # noqa: BLE001
             database_ok = False
             problems.append(f"database: {exc}")
-
-        from app.plex import client as plex_client
 
         plex_ready = plex_client.stored_server() is not None
         account_chosen = plex_client.configured_account_id() is not None

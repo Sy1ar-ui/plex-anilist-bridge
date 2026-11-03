@@ -50,6 +50,32 @@ def _viewed_at(item) -> datetime:
     return datetime.now(UTC)
 
 
+async def history_for(plex: PlexClient, account_ids: list[int], mindate: datetime) -> list:
+    """Plex history for every id the chosen account goes by, each play once.
+
+    The chosen account's own id comes first and must succeed. The others (the
+    owner's plex.tv id, or an id the user confirmed) are extra: a server that
+    files history only under the local id simply returns nothing for them.
+    """
+    seen: set[tuple[str, str]] = set()
+    merged: list = []
+    for index, account_id in enumerate(account_ids):
+        try:
+            items = await plex_client.run(plex.history_sync, account_id=account_id, mindate=mindate)
+        except Exception:
+            if index == 0:
+                raise
+            log.info("could not read Plex history for account id %s", account_id)
+            continue
+        for item in items:
+            key = (str(getattr(item, "ratingKey", "")), str(getattr(item, "viewedAt", "")))
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(item)
+    return merged
+
+
 async def run_reconcile(*, lookback_hours: int | None = None) -> ReconcileReport:
     report = ReconcileReport()
     settings = settings_store.all_settings()
@@ -73,10 +99,9 @@ async def run_reconcile(*, lookback_hours: int | None = None) -> ReconcileReport
     mindate = datetime.now(UTC) - timedelta(hours=hours)
     enabled = plex_client.enabled_section_ids()
 
+    account_ids = [account_id, *sorted(plex_client.webhook_account_ids() - {account_id})]
     try:
-        history = await plex_client.run(
-            plex.history_sync, account_id=account_id, mindate=mindate
-        )
+        history = await history_for(plex, account_ids, mindate)
     except Exception as exc:  # noqa: BLE001 - reported to the UI as text
         report.detail = f"could not read Plex history: {exc}"
         report.errors.append(str(exc))
@@ -97,7 +122,7 @@ async def run_reconcile(*, lookback_hours: int | None = None) -> ReconcileReport
             # The history query is already filtered by account, but this is the
             # one guarantee worth re-checking rather than trusting.
             item_account = getattr(item, "accountID", None)
-            if item_account is not None and int(item_account) != account_id:
+            if item_account is not None and int(item_account) not in account_ids:
                 continue
 
             rating_key = getattr(item, "ratingKey", None)

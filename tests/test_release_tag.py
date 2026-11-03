@@ -68,12 +68,32 @@ def test_no_workflow_publishes_on_a_pushed_tag():
         assert not (push or {}).get("tags"), f"{path.name} triggers on tag pushes"
 
 
-def test_the_release_workflow_runs_only_by_hand_and_only_on_main():
-    release = _workflow("release.yml")
-    assert set(release["on"]) == {"workflow_dispatch"}
-    first_step = release["jobs"]["prepare"]["steps"][0]
-    assert first_step["if"] == "github.ref != 'refs/heads/main'"
+def test_the_release_workflow_runs_by_hand_or_on_a_published_release():
+    triggers = _workflow("release.yml")["on"]
+    assert set(triggers) == {"workflow_dispatch", "release"}
+    assert triggers["release"]["types"] == ["published"]
+
+
+def test_run_workflow_is_refused_off_main():
+    first_step = _workflow("release.yml")["jobs"]["prepare"]["steps"][0]
+    assert "github.event_name == 'workflow_dispatch'" in first_step["if"]
+    assert "github.ref != 'refs/heads/main'" in first_step["if"]
     assert "exit 1" in first_step["run"]
+
+
+def test_a_releases_page_release_must_match_the_code_and_be_on_main():
+    steps = {s.get("id"): s for s in _workflow("release.yml")["jobs"]["prepare"]["steps"]}
+    check = steps["release"]
+    assert check["if"] == "github.event_name == 'release'"
+    assert 'check_release_tag.py "$TAG"' in check["run"]
+    assert 'merge-base --is-ancestor "$GITHUB_SHA" origin/main' in check["run"]
+
+
+def test_publishing_the_workflows_own_draft_does_not_build_again():
+    jobs = _workflow("release.yml")["jobs"]
+    assert "github.event.release.author.login != 'github-actions[bot]'" in jobs["prepare"]["if"]
+    # Only the Run workflow path tags and opens a draft.
+    assert jobs["publish"]["if"] == "github.event_name == 'workflow_dispatch'"
 
 
 def test_the_release_tags_only_after_the_image_is_published():

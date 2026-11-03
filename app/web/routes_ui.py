@@ -335,6 +335,7 @@ async def _render_settings(
         enabled_sections=enabled,
         chosen_account=int(account_row["id"]) if account_row else None,
         webhook_alias=plex_client.webhook_account_alias(),
+        owner_plex_tv_id=plex_client.owner_plex_tv_id(),
         token_status=tokens.all_statuses(),
         notifications=_recent_notifications(),
         sonarr=_sonarr_status(),
@@ -395,6 +396,7 @@ async def save_account(
     plex_client.save_account(
         plex_client.PlexAccountInfo(int(account_id), account_name or str(account_id), None)
     )
+    await plex_client.learn_owner_plex_tv_id()
     return _redirect(
         "/settings#libraries",
         f"Only events from {account_name or account_id} will be processed",

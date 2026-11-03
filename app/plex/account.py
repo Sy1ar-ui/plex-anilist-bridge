@@ -209,6 +209,23 @@ async def servers(token: str, *, http: httpx.AsyncClient | None = None) -> list[
     return sorted(found, key=lambda s: (not s.owned, s.name.lower()))
 
 
+async def owner_id_for(
+    token: str, machine_id: str, *, http: httpx.AsyncClient | None = None
+) -> int | None:
+    """The plex.tv id of the account behind ``token``, if it owns this server.
+
+    None unless plex.tv itself lists the server ``machine_id`` as owned by that
+    account, so the id returned is the server owner's and nobody else's.
+    """
+    me = await user(token, http=http)
+    if me.id <= 1:
+        return None
+    for server in await servers(token, http=http):
+        if server.client_id == machine_id and server.owned:
+            return me.id
+    return None
+
+
 def _connections(raw: list[dict[str, Any]]) -> list[Connection]:
     """Every address worth trying, local first, relay last, without repeats.
 

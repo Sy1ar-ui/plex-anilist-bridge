@@ -1,18 +1,28 @@
 name: Release
 
-# Cut a release from the head of main, with nothing typed by hand:
+# Two ways to cut a release; both publish the image before anyone can pull it.
 #
-#   1. read the version from app/config.py and refuse if it is already tagged
-#      (a release needs a version bump, merged first);
-#   2. run the tests on that commit;
-#   3. build and publish ghcr.io/<repo>:<version> and :<major>.<minor>;
-#   4. tag that exact commit v<version> and open a draft GitHub release.
+# A. Actions -> Release -> Run workflow, on main (nothing typed by hand):
+#      read the version from app/config.py, refuse if it is already tagged,
+#      run the tests, publish ghcr.io/<repo>:<version> and :<major>.<minor>,
+#      then tag that exact commit v<version> and open a draft release.
 #
-# Start it from Actions -> Release -> Run workflow, on main. The tag is pushed
-# with GITHUB_TOKEN, which does not trigger other workflows, so nothing builds
-# twice. Publishing the draft does not create a tag, so it triggers nothing.
+# B. Publish a release from the Releases page, with a new tag v<version>:
+#      refuse unless the tag is exactly v + the version in that commit's
+#      app/config.py and the commit is on main, run the tests, and publish the
+#      image. The release is already public by then, so a refusal leaves a
+#      release with no image: the run fails loudly instead.
+#
+# Publishing A's draft also sends a "release published" event. That release
+# is authored by github-actions[bot] and its image already exists, so it is
+# skipped rather than built twice.
+#
+# GitHub runs this file from the tagged commit, so B works only for commits
+# that contain it; an older commit has no release trigger and builds nothing.
 on:
   workflow_dispatch:
+  release:
+    types: [published]
 
 permissions: {}
 
@@ -22,23 +32,27 @@ concurrency:
 
 jobs:
   prepare:
+    if: github.event_name == 'workflow_dispatch' || github.event.release.author.login != 'github-actions[bot]'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
     outputs:
-      version: ${{ steps.version.outputs.version }}
+      version: ${{ steps.version.outputs.version || steps.release.outputs.version }}
     steps:
       # A release is always cut from main, never from a branch or an old commit.
       - name: Refuse anything but main
-        if: github.ref != 'refs/heads/main'
+        if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
         run: |
           echo "::error::Run the Release workflow on main, not $GITHUB_REF."
           exit 1
 
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
 
       - name: Read the version and check it is not released yet
         id: version
+        if: github.event_name == 'workflow_dispatch'
         run: |
           version="$(python3 scripts/check_release_tag.py --print-version)"
           python3 scripts/check_release_tag.py "v$version"
@@ -48,6 +62,25 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Releasing $version from $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check the published release is this commit's version, on main
+        id: release
+        if: github.event_name == 'release'
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if ! python3 scripts/check_release_tag.py "$TAG"; then
+            echo "::error::Release $TAG was published, but no image was built for it. Delete the release and its tag, then release again."
+            exit 1
+          fi
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Release $TAG is on $GITHUB_SHA, which is not on main. No image was built. Delete the release and its tag, then release a commit on main."
+            exit 1
+          fi
+          version="$(python3 scripts/check_release_tag.py --print-version)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Publishing the image for release $TAG from $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
@@ -69,7 +102,10 @@ jobs:
       version: ${{ needs.prepare.outputs.version }}
 
   publish:
-    # Only once the image is published, so a tag always has an image behind it.
+    # Only the Run workflow path tags and drafts; a Releases-page release
+    # already has both. Runs once the image is published, so a tag always has
+    # an image behind it.
+    if: github.event_name == 'workflow_dispatch'
     needs: [prepare, image]
     runs-on: ubuntu-24.04
     permissions:

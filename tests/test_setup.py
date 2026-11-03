@@ -352,6 +352,8 @@ def test_plex_sign_in_from_start_to_a_saved_server(wizard, net):
     # The account token is not kept anywhere once the server is chosen.
     for row in db.query("SELECT value_json FROM setting"):
         assert ACCOUNT_TOKEN not in row["value_json"]
+    # The owner's plex.tv id is kept for this server: some send it in webhooks instead of 1.
+    assert settings_store.get(plex_client.OWNER_PLEX_TV_ID) == {"id": 99, "machine_id": SERVER_ID}
 
 
 def test_a_return_with_the_wrong_nonce_is_refused(wizard, net):

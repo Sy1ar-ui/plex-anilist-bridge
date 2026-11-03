@@ -250,6 +250,136 @@ def test_choosing_an_account_forgets_a_confirmed_id(client):
     assert plex_client.webhook_account_candidate() is None
 
 
+OWNER_PLEX_TV_ID = 23834791   # what a real server sent for its owner
+
+
+def _owner_id_learned(machine_id="aaaa-bbbb-cccc"):
+    _connect_server("aaaa-bbbb-cccc")
+    plex_client.save_owner_plex_tv_id(OWNER_PLEX_TV_ID, machine_id)
+
+
+def test_the_owner_counts_under_either_id(client):
+    """What a real server sent: the owner's events under their plex.tv id, not 1."""
+    _owner_id_learned()
+    assert client.post(url(), json=_mine_as(OWNER_PLEX_TV_ID, event="media.scrobble")).json()["status"] == "accepted"
+    assert client.post(url(), json=_mine_as(1, event="media.scrobble")).json()["status"] == "accepted"
+    assert plex_client.webhook_account_candidate() is None
+    # A play/stop under the plex.tv id marks the webhook as working, too.
+    db.execute("DELETE FROM watermark WHERE name = 'last_webhook'")
+    client.post(url(), json=_mine_as(OWNER_PLEX_TV_ID, event="media.stop"))
+    assert _last_webhook() is not None
+
+
+def test_events_are_recorded_under_the_chosen_accounts_own_id(client):
+    """So the history reconcile, which asks for account 1, sees them as already done."""
+    _owner_id_learned()
+    client.post(url(), json=_mine_as(OWNER_PLEX_TV_ID, event="media.scrobble"))
+    assert db.query_one("SELECT plex_account_id FROM event")["plex_account_id"] == 1
+
+
+def test_the_plex_tv_id_counts_only_while_the_owner_is_chosen(client):
+    _owner_id_learned()
+    plex_client.save_account(PlexAccountInfo(812, "lodger", None))
+    assert plex_client.owner_plex_tv_id() is None
+    assert client.post(url(), json=_mine_as(OWNER_PLEX_TV_ID)).json()["reason"] == "other account"
+
+
+def test_a_plex_tv_id_learned_on_another_server_is_ignored(client):
+    _owner_id_learned(machine_id="the-old-server")
+    assert plex_client.owner_plex_tv_id() is None
+    client.post(url(), json=_mine_as(OWNER_PLEX_TV_ID))
+    # Not accepted, so it falls back to asking.
+    assert plex_client.webhook_account_candidate()["id"] == OWNER_PLEX_TV_ID
+
+
+def test_without_the_plex_tv_id_it_still_asks(client):
+    client.post(url(), json=_mine_as(OWNER_PLEX_TV_ID))
+    assert plex_client.webhook_account_candidate()["id"] == OWNER_PLEX_TV_ID
+
+
+# --------------------------------------------------------------------------
+# learning the owner's plex.tv id from plex.tv
+# --------------------------------------------------------------------------
+def _plex_tv(*, owned=True, machine_id="aaaa-bbbb-cccc", user_id=OWNER_PLEX_TV_ID):
+    import httpx
+
+    def handler(request):
+        if request.url.path == "/api/v2/user":
+            return httpx.Response(200, json={"id": user_id, "username": "Ja_es", "title": "James"})
+        if request.url.path == "/api/v2/resources":
+            return httpx.Response(200, json=[{"name": "tower", "provides": "server", "owned": owned,
+                                              "clientIdentifier": machine_id, "connections": []}])
+        return httpx.Response(404)
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+@pytest.mark.parametrize("owned,machine_id,expected", [
+    (True, "aaaa-bbbb-cccc", OWNER_PLEX_TV_ID),
+    (False, "aaaa-bbbb-cccc", None),        # shared with this account, not owned
+    (True, "some-other-server", None),      # this account owns a different server
+])
+def test_plex_tv_must_say_the_account_owns_this_server(owned, machine_id, expected):
+    import asyncio
+
+    from app.plex import account
+
+    async def ask():
+        async with _plex_tv(owned=owned, machine_id=machine_id) as http:
+            return await account.owner_id_for("token", "aaaa-bbbb-cccc", http=http)
+
+    assert asyncio.run(ask()) == expected
+
+
+def test_the_owner_id_is_learned_when_needed(client, monkeypatch):
+    import asyncio
+
+    from app.plex import account
+
+    calls = []
+
+    async def owner_id_for(token, machine_id, **_):
+        calls.append((token, machine_id))
+        return OWNER_PLEX_TV_ID
+
+    monkeypatch.setattr(account, "owner_id_for", owner_id_for)
+    _connect_server("aaaa-bbbb-cccc")
+    assert asyncio.run(plex_client.learn_owner_plex_tv_id()) == OWNER_PLEX_TV_ID
+    assert calls == [("token", "aaaa-bbbb-cccc")]
+    assert plex_client.owner_plex_tv_id() == OWNER_PLEX_TV_ID
+    # Known now: not asked again.
+    assert asyncio.run(plex_client.learn_owner_plex_tv_id()) == OWNER_PLEX_TV_ID
+    assert len(calls) == 1
+
+
+def test_the_owner_id_is_not_looked_up_for_another_account(client, monkeypatch):
+    import asyncio
+
+    from app.plex import account
+
+    async def never(*_a, **_k):
+        raise AssertionError("plex.tv must not be asked")
+
+    monkeypatch.setattr(account, "owner_id_for", never)
+    _connect_server("aaaa-bbbb-cccc")
+    plex_client.save_account(PlexAccountInfo(812, "lodger", None))
+    assert asyncio.run(plex_client.learn_owner_plex_tv_id()) is None
+
+
+def test_a_failed_lookup_changes_nothing(client, monkeypatch):
+    import asyncio
+
+    from app.plex import account
+
+    async def down(*_a, **_k):
+        raise account.PlexAuthError("plex.tv could not be reached")
+
+    monkeypatch.setattr(account, "owner_id_for", down)
+    _connect_server("aaaa-bbbb-cccc")
+    assert asyncio.run(plex_client.learn_owner_plex_tv_id()) is None
+    assert plex_client.owner_plex_tv_id() is None
+
+
 def test_own_names_include_the_plex_sign_in(client):
     from app import settings_store
 
