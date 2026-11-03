@@ -22,7 +22,7 @@ from app import setup as setup_state
 from app.plex import account as plex_account
 from app.plex import client as plex_client
 from app.plex.client import PlexClient, PlexUnavailable
-from app.web.routes_webhook import COUNTER_FOREIGN
+from app.web.routes_webhook import COUNTER_FOREIGN, COUNTER_OTHER_SERVER
 from app.web.routes_ui import (
     _base_context,
     _redirect,
@@ -347,9 +347,12 @@ async def step_anilist_token(_: None = Depends(require_session), access_token: s
 # --------------------------------------------------------------------------
 @router.get("/setup/webhook", response_class=HTMLResponse)
 async def step_webhook(request: Request, _: None = Depends(require_session)):
+    server = db.query_one("SELECT name FROM plex_server WHERE id = 1")
     return _page(
         request, "webhook", webhook_url=_webhook_url(request),
         last_webhook=_watermark("last_webhook"), foreign=db.get_counter(COUNTER_FOREIGN),
+        other_server=db.get_counter(COUNTER_OTHER_SERVER),
+        server_name=(server["name"] if server and server["name"] else "the connected server"),
     )
 
 
@@ -357,13 +360,14 @@ async def step_webhook(request: Request, _: None = Depends(require_session)):
 async def step_webhook_status(_: None = Depends(require_session)) -> JSONResponse:
     """Whether Plex has reached the bridge from the configured account.
 
-    ``foreign`` counts deliveries dropped as another account's: if those
-    arrive and nothing else does, the webhook works but the wrong account was
-    chosen.
+    ``foreign`` counts deliveries dropped as another account's on the
+    connected server; ``other_server`` those sent by a different Plex server.
+    Either way the webhook URL works.
     """
     last = _watermark("last_webhook")
     return JSONResponse({"received": last is not None, "at": last,
-                         "foreign": db.get_counter(COUNTER_FOREIGN)})
+                         "foreign": db.get_counter(COUNTER_FOREIGN),
+                         "other_server": db.get_counter(COUNTER_OTHER_SERVER)})
 
 
 @router.get("/setup/done", response_class=HTMLResponse)

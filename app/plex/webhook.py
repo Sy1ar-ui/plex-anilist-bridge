@@ -1,7 +1,8 @@
 """Plex webhook payload parsing and the account filter.
 
-The Plex server is shared, so the account filter is the first thing that runs
-and it reads exactly one field: ``Account.id``. An event from anyone else is
+The Plex server is shared, so the account filter runs before anything reads
+the payload, and it reads exactly one field: ``Account.id``. Only the server
+check comes first, and it reads only ``Server.uuid``. An event from anyone else is
 dropped before enrichment, before resolution, and before anything about what
 they watched reaches the log -- only a counter moves.
 
@@ -47,6 +48,28 @@ def account_id_of(payload: dict[str, Any]) -> int | None:
     if isinstance(raw, str) and raw.strip().isdigit():
         return int(raw.strip())
     return None
+
+
+def server_uuid_of(payload: dict[str, Any]) -> str | None:
+    """The sending server's machine identifier, or None if the payload has none."""
+    server = payload.get("Server")
+    if not isinstance(server, dict):
+        return None
+    raw = server.get("uuid")
+    return raw.strip() if isinstance(raw, str) and raw.strip() else None
+
+
+def is_from_server(payload: dict[str, Any], machine_id: str | None) -> bool:
+    """False only when both ids are known and differ.
+
+    A Plex account's webhooks can also carry its own playback on servers it
+    does not own. Those rating keys belong to that other server, so looking
+    them up on the connected one would fetch an unrelated item.
+    """
+    sent_by = server_uuid_of(payload)
+    if not machine_id or not sent_by:
+        return True
+    return sent_by == machine_id
 
 
 def event_of(payload: dict[str, Any]) -> str:

@@ -419,21 +419,27 @@ def test_mal_oauth_through_the_wizard(wizard, net):
 
 
 def test_the_webhook_step_reports_arrival(wizard):
-    assert wizard.get("/setup/webhook/status").json() == {"received": False, "at": None, "foreign": 0}
+    assert wizard.get("/setup/webhook/status").json() == {"received": False, "at": None, "foreign": 0, "other_server": 0}
     db.execute("INSERT INTO watermark (name, value) VALUES ('last_webhook', datetime('now'))")
     assert wizard.get("/setup/webhook/status").json()["received"] is True
     assert "this step is done" in wizard.get("/setup/webhook").text
 
 
-def test_the_webhook_step_says_when_only_another_account_is_arriving(wizard):
-    from app.web.routes_webhook import COUNTER_FOREIGN
+def test_the_webhook_step_says_why_deliveries_were_dropped(wizard):
+    from app.web.routes_webhook import COUNTER_FOREIGN, COUNTER_OTHER_SERVER
 
-    assert 'id="webhook-foreign" class="callout tone-warn" role="status" hidden' in wizard.get("/setup/webhook").text
+    page = wizard.get("/setup/webhook").text
+    assert 'id="webhook-other-server" class="callout tone-warn" role="status" hidden' in page
+    assert 'id="webhook-foreign" class="callout tone-info" role="status" hidden' in page
+
     db.bump_counter(COUNTER_FOREIGN)
-    assert wizard.get("/setup/webhook/status").json()["foreign"] == 1
+    db.bump_counter(COUNTER_OTHER_SERVER)
+    status = wizard.get("/setup/webhook/status").json()
+    assert (status["foreign"], status["other_server"]) == (1, 1)
     page = wizard.get("/setup/webhook").text
     assert 'role="status" hidden' not in page
-    assert "came from a different Plex account" in page
+    assert "sent by a different Plex server" in page
+    assert "from other accounts on" in page
 
 
 def test_finishing_sends_you_to_the_dashboard_from_then_on(wizard):

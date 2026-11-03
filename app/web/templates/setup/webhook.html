@@ -10,11 +10,20 @@
 </p>
 
 {% if not last_webhook %}
-<div id="webhook-foreign" class="callout tone-warn" role="status" {% if not foreign %}hidden{% endif %}>
-  {{ icon('alert') }}
-  <p><strong>Plex is reaching the bridge</strong>, but <span id="webhook-foreign-count">{{ foreign }}</span>
-     event(s) so far came from a different Plex account than the one chosen, so they were dropped.
-     Check <a href="/setup/account">Your account</a> is you.</p>
+<div id="webhook-other-server" class="callout tone-warn" role="status" {% if not other_server %}hidden{% endif %}>
+  {{ icon('server') }}
+  <p><strong>Plex is reaching the bridge</strong>, but <span id="webhook-other-server-count">{{ other_server }}</span>
+     event(s) were sent by a different Plex server than {{ server_name }}, so they were dropped. Plex also
+     reports your own playback on servers you are shared on. Play something on {{ server_name }}, or
+     <a href="/setup/plex">connect the server you watch on</a>.</p>
+</div>
+
+<div id="webhook-foreign" class="callout tone-info" role="status" {% if not foreign %}hidden{% endif %}>
+  {{ icon('info') }}
+  <p><strong>Plex is reaching the bridge.</strong> <span id="webhook-foreign-count">{{ foreign }}</span>
+     event(s) from other accounts on {{ server_name }} were dropped, as they should be: other people
+     watching count too. If yours are among them, the Plex app you played on is signed in as a different
+     user or Plex Home profile than the one chosen in <a href="/setup/account">Your account</a>.</p>
 </div>
 
 <details class="advanced">
@@ -30,14 +39,18 @@
 
 <script>
   (function () {
-    var foreign = document.getElementById('webhook-foreign');
-    var foreignCount = document.getElementById('webhook-foreign-count');
+    function reveal(id, count) {
+      if (!count) return;
+      document.getElementById(id + '-count').textContent = count;
+      document.getElementById(id).hidden = false;
+    }
     function check() {
       fetch('/setup/webhook/status', { credentials: 'same-origin' })
         .then(function (r) { return r.json(); })
         .then(function (data) {
           if (data.received) { location.reload(); return; }
-          if (data.foreign) { foreignCount.textContent = data.foreign; foreign.hidden = false; }
+          reveal('webhook-other-server', data.other_server);
+          reveal('webhook-foreign', data.foreign);
           setTimeout(check, 5000);
         })
         .catch(function () { setTimeout(check, 10000); });

@@ -550,6 +550,7 @@
   .callout > .icon, .alert > .icon, .notice > .icon { color: var(--tone); width: 20px; height: 20px; }
   .callout p, .alert p, .notice p { margin: 0; flex: 1 1 300px; }
   .callout form { margin: 0; }
+  .callout ~ .callout { margin-top: 10px; }
   .alert, .notice { flex-wrap: nowrap; align-items: flex-start; }
   .alert { font-size: 14px; }
   .alert p, .notice p { flex: 1 1 auto; min-width: 0; }

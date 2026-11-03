@@ -225,6 +225,7 @@ async def system_page(
         counters={
             "accepted": db.get_counter("webhook_accepted"),
             "dropped_other_accounts": db.get_counter("foreign_event_dropped"),
+            "dropped_other_servers": db.get_counter("webhook_other_server"),
             "ignored": db.get_counter("webhook_ignored_event_type"),
         },
         event_total=repo.event_count(),

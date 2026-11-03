@@ -158,6 +158,44 @@ def test_another_accounts_other_event_types_only_move_the_foreign_counter(client
     assert db.get_counter(routes_webhook.COUNTER_IGNORED) == 0
 
 
+def _connect_server(machine_id: str = "aaaa-bbbb-cccc") -> None:
+    plex_client.save_server("http://plex:32400", "token", name="tower", machine_id=machine_id)
+
+
+def test_the_server_id_is_read_from_the_payload():
+    assert webhook.server_uuid_of(MINE) == "aaaa-bbbb-cccc"
+    assert webhook.server_uuid_of(PAUSE) is None
+    assert webhook.is_from_server(MINE, "aaaa-bbbb-cccc")
+    assert not webhook.is_from_server(MINE, "zzzz")
+    # Unknown on either side: nothing to compare, so it is not refused.
+    assert webhook.is_from_server(MINE, None)
+    assert webhook.is_from_server(PAUSE, "zzzz")
+
+
+def test_my_event_from_another_server_is_dropped(client):
+    """Plex sends your own playback on servers you are shared on; its rating keys are not ours."""
+    _connect_server("a-different-server")
+    response = client.post(url(), json=MINE)
+    assert response.json() == {"status": "ignored", "reason": "other server"}
+    assert db.get_counter(routes_webhook.COUNTER_OTHER_SERVER) == 1
+    assert db.get_counter(routes_webhook.COUNTER_ACCEPTED) == 0
+    assert _last_webhook() is None
+    assert db.query_one("SELECT COUNT(*) AS n FROM event")["n"] == 0
+
+
+def test_my_event_from_the_connected_server_is_accepted(client):
+    _connect_server("aaaa-bbbb-cccc")
+    assert client.post(url(), json=MINE).json()["status"] == "accepted"
+    assert db.get_counter(routes_webhook.COUNTER_OTHER_SERVER) == 0
+
+
+def test_another_server_never_reaches_the_account_filter(client):
+    _connect_server("a-different-server")
+    client.post(url(), json=THEIRS)
+    assert db.get_counter(routes_webhook.COUNTER_OTHER_SERVER) == 1
+    assert db.get_counter(routes_webhook.COUNTER_FOREIGN) == 0
+
+
 def test_a_wrong_path_token_is_a_404(client):
     response = client.post(url("deadbeef" * 4), json=MINE)
     assert response.status_code == 404

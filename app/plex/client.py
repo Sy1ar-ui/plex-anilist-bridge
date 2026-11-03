@@ -95,6 +95,12 @@ def save_server(base_url: str, token: str, *, name: str | None, machine_id: str 
     )
 
 
+def stored_machine_id() -> str | None:
+    """The connected server's machine identifier, if it was recorded."""
+    row = db.query_one("SELECT machine_id FROM plex_server WHERE id = 1")
+    return row["machine_id"] if row and row["machine_id"] else None
+
+
 def configured_account_id() -> int | None:
     row = db.query_one("SELECT id FROM plex_account LIMIT 1")
     return int(row["id"]) if row else None
