@@ -558,16 +558,24 @@ The version is in four places: `app/config.py`, `pyproject.toml`,
 image tag, since nothing here uses `:latest`. `tests/test_version.py` fails if
 they disagree. Bump all four in a PR and merge it.
 
-Then cut the release from GitHub: **Actions → Release → Run workflow**, on
-`main`. The workflow reads the version from `app/config.py`, refuses if it is
-already tagged, runs the tests, publishes
-`ghcr.io/sy1ar-ui/plex-anilist-bridge:<version>` and `:<major>.<minor>`, then
-tags that exact commit `v<version>` and opens a draft release. Edit the draft's
-notes and publish it.
+Then release it, either way:
 
-**Do not push `v*` tags by hand.** GitHub runs a workflow from the tagged
-commit, so a tag pushed onto an old commit runs that commit's old workflow,
-whatever `main` now says. That is how v0.6.0 and v0.6.1 were first tagged on
+- **Actions → Release → Run workflow**, on `main`. The workflow reads the
+  version from `app/config.py`, refuses if it is already tagged, runs the
+  tests, publishes `ghcr.io/sy1ar-ui/plex-anilist-bridge:<version>` and
+  `:<major>.<minor>`, then tags that exact commit `v<version>` and opens a
+  draft release. Edit the draft's notes and publish it.
+- **Releases → Draft a new release**, with a new tag `v<version>` on `main`.
+  Publishing it runs the same workflow: it checks the tag is exactly `v` plus
+  the version in that commit's `app/config.py` and that the commit is on
+  `main`, runs the tests and publishes the image. The release is public
+  before the image is, so for a minute or two `:<version>` is not there yet.
+  If a check fails, the run fails and no image is published: delete the
+  release and its tag, and release again.
+
+**Do not push `v*` tags by hand**, and never release an old commit. GitHub
+runs a workflow from the tagged commit, so a tag on an old commit runs that
+commit's old workflow, whatever `main` now says. That is how v0.6.0 and v0.6.1 were first tagged on
 the 0.1.1 commit and published 0.1.1 under both names. The image workflow no
 longer publishes on tag pushes at all, and `tests/test_release_tag.py` fails if
 any workflow starts to. Until the Release workflow has run, the compose file
