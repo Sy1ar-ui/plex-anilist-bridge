@@ -22,10 +22,10 @@ fixes, deliberately:
 
 > **Status.** Everything on the [roadmap](#roadmap) is implemented: the Plex →
 > AniList leg, the mapping engine, the activity log, the review queue, the
-> setup wizard, the AniList → MyAnimeList mirror, notifications, and Sonarr as
-> an optional id source. Dry-run is on by default. The suite passes in CI and the image
-> builds for amd64 and arm64, but nothing has yet been run against a real Plex
-> server, AniList or MyAnimeList; see [what is and is not verified](#what-is-and-is-not-verified).
+> setup wizard, the AniList → MyAnimeList mirror, notifications, agent access,
+> and Sonarr as an optional id source. Dry-run is on by default. The suite passes in CI and the image
+> builds for amd64 and arm64, but nothing has yet been run against the real
+> services it talks to; see [what is and is not verified](#what-is-and-is-not-verified).
 
 ---
 
@@ -511,26 +511,43 @@ filter leaving no trace of another user's viewing.
 
 ### What is and is not verified
 
-CI runs the suite on CPython 3.12 and builds the image on every push. Latest run:
+**Tested.** CI runs the suite on CPython 3.12 for every pull request and every
+push to `main`: **457 tests at 0.5.0**, all offline. Mapping datasets come from
+fixture slices cut from the real datasets, and every outside service is
+answered by a stub or a mocked HTTP transport. The image builds for
+**linux/amd64 and linux/arm64** on every pull request (without pushing) and is
+published from `main` and release tags, so the `setpriv` privilege drop and the
+dependency-free healthcheck survive a real build. During development the app
+was also run locally and every page driven in a headless browser, at desktop
+and phone widths.
 
-- **140 tests pass, 0 fail**;
-- the image builds for **linux/amd64 and linux/arm64** from the pinned base
-  digest and pushes to GHCR — so the `setpriv` privilege drop and the
-  dependency-free Python healthcheck survive a real build.
+The tests aim at the things that go wrong: split cours, absolute numbering,
+seasons continuing one entry, specials, movies, override precedence, the
+never-decrease rule, the rating hold and its completion date, scores only ever
+coming from a rating you enter, the account filter leaving no trace of another
+user, outages and throttling, OAuth state that cannot be replayed, and the
+agent API refusing a missing or wrong token. The rules that matter most have
+been mutation-checked: switching them off makes tests fail.
 
-This was written on a machine with neither Python nor Docker, so before CI
-existed the suite ran under CPython 3.13 in WebAssembly (Pyodide). That covered
-130 of the 140: Starlette's `TestClient` needs an OS thread, which WebAssembly
-does not have, so the ten webhook *HTTP endpoint* tests could not run until CI.
-They pass there. The pure account-filter tests — the ones that matter for the
-shared-server guarantee — ran in both.
+**Not verified against the real services.** Nothing has yet run against a real
+Plex server, AniList, MyAnimeList, Sonarr, Discord, ntfy, OpenClaw or Hermes,
+or in a long-running container. Each integration was built from the service's
+own documentation, and these are the parts most worth watching on a first run:
 
-**Not verified:** nothing has been exercised against a real Plex server, a real
-AniList account, or a running container. That is the next step:
+| Service | What to check |
+|---|---|
+| Plex | the PIN sign-in round trip; which server addresses answer from inside your container |
+| AniList | the OAuth sign-in; that a held final episode and a later rating land as expected |
+| MyAnimeList | the OAuth sign-in; whether start/finish dates are accepted (off by default); rate limits on a large first reconcile |
+| Sonarr | the series list reads, and the folder-name match against your Plex paths |
+| OpenClaw / Hermes | that notifications arrive, Hermes's V2 signature is accepted, and the agent can call back (**Send a test** does both) |
+
+A sensible first run keeps **dry run on**: every event then shows exactly what
+*would* have been written, and nothing is sent to AniList or MyAnimeList.
 
 ```bash
 pytest
-docker compose up --build   # then open http://localhost:8787
+docker compose up -d        # then open http://<host>:8787
 curl -s localhost:8787/health
 ```
 
