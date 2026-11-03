@@ -22,7 +22,7 @@ from app import setup as setup_state
 from app.plex import account as plex_account
 from app.plex import client as plex_client
 from app.plex.client import PlexClient, PlexUnavailable
-from app.web.routes_webhook import COUNTER_FOREIGN
+from app.web.routes_webhook import COUNTER_FOREIGN, COUNTER_OTHER_SERVER
 from app.web.routes_ui import (
     _base_context,
     _redirect,
@@ -37,7 +37,7 @@ log = logging.getLogger(__name__)
 
 router = APIRouter()
 
-_SIGNED_IN_AS = "plex_signed_in_as"
+_SIGNED_IN_AS = plex_client.SIGNED_IN_AS
 _ANIME_NAME = re.compile(r"anime|アニメ|animation", re.IGNORECASE)
 
 
@@ -347,23 +347,64 @@ async def step_anilist_token(_: None = Depends(require_session), access_token: s
 # --------------------------------------------------------------------------
 @router.get("/setup/webhook", response_class=HTMLResponse)
 async def step_webhook(request: Request, _: None = Depends(require_session)):
+    server = db.query_one("SELECT name FROM plex_server WHERE id = 1")
     return _page(
         request, "webhook", webhook_url=_webhook_url(request),
         last_webhook=_watermark("last_webhook"), foreign=db.get_counter(COUNTER_FOREIGN),
+        other_server=db.get_counter(COUNTER_OTHER_SERVER),
+        server_name=(server["name"] if server and server["name"] else "the connected server"),
+        candidate=plex_client.webhook_account_candidate(),
+        account_name=plex_client.configured_account_name() or "your account",
     )
+
+
+@router.post("/setup/webhook/adopt")
+async def step_webhook_adopt(_: None = Depends(require_session), account_id: int = Form(...)):
+    """Count a webhook account id as the chosen account's, once the user says so.
+
+    The id must be the one the bridge itself noticed; never one from the form
+    alone. It is refused if the server lists it as somebody else.
+    """
+    candidate = plex_client.webhook_account_candidate()
+    if not candidate or candidate["id"] != account_id:
+        return _redirect("/setup/webhook", "That account id is not the one Plex sent.", "error")
+    # Never accept an id the server says is somebody else's. If the server's
+    # accounts cannot be read, that cannot be checked, so nothing is added.
+    server = plex_client.stored_server()
+    if not server:
+        return _redirect("/setup/plex", "Connect your Plex server first.", "error")
+    try:
+        accounts = await plex_client.run(PlexClient(*server).accounts_sync)
+    except Exception as exc:  # noqa: BLE001 - shown to the user
+        return _redirect("/setup/webhook",
+                         f"Could not read your server's accounts to check that id ({exc}). Try again.", "error")
+    other = next((a for a in accounts if a.id == account_id
+                  and a.id != plex_client.configured_account_id()), None)
+    if other:
+        return _redirect("/setup/webhook",
+                         f"Account id {account_id} is {other.name} on your server, so it was not added.",
+                         "error")
+    plex_client.set_webhook_account_alias(account_id)
+    return _redirect("/setup/webhook",
+                     f"Events with account id {account_id} now count as yours. Play and stop something again.",
+                     "ok")
 
 
 @router.get("/setup/webhook/status")
 async def step_webhook_status(_: None = Depends(require_session)) -> JSONResponse:
     """Whether Plex has reached the bridge from the configured account.
 
-    ``foreign`` counts deliveries dropped as another account's: if those
-    arrive and nothing else does, the webhook works but the wrong account was
-    chosen.
+    ``foreign`` counts deliveries dropped as another account's on the
+    connected server; ``other_server`` those sent by a different Plex server.
+    Either way the webhook URL works. ``candidate`` is an account id seen on
+    dropped events that look like the chosen account's own.
     """
     last = _watermark("last_webhook")
+    candidate = plex_client.webhook_account_candidate()
     return JSONResponse({"received": last is not None, "at": last,
-                         "foreign": db.get_counter(COUNTER_FOREIGN)})
+                         "foreign": db.get_counter(COUNTER_FOREIGN),
+                         "other_server": db.get_counter(COUNTER_OTHER_SERVER),
+                         "candidate": candidate["id"] if candidate else None})
 
 
 @router.get("/setup/done", response_class=HTMLResponse)

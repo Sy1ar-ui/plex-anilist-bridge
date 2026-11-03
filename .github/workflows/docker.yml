@@ -1,13 +1,26 @@
 name: Build and publish image
 
+# Version images (:0.6.1, :0.6) are published only through the Release
+# workflow, which calls this one with the version it read from the code.
+#
+# There is deliberately no `push: tags` trigger. GitHub runs the workflow file
+# from the tagged commit, so a tag pushed by hand onto an old commit runs that
+# commit's old workflow, check or no check: v0.6.0 and v0.6.1 were tagged on
+# the 0.1.1 commit and published 0.1.1 under both names. Releasing from a
+# workflow on main means nobody types a tag on a stale checkout.
 on:
   push:
     branches: [main]
-    tags: ["v*"]
   # Pull requests build the image for both platforms but push nothing, so a
   # broken Dockerfile or workflow shows up before merge, not on a release.
   pull_request:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      version:
+        description: "Release version, e.g. 0.6.1. Publishes :<version> and :<major>.<minor>."
+        type: string
+        required: true
 
 permissions:
   contents: read
@@ -19,12 +32,13 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      # A release tag must be exactly "v" + the version in app/config.py.
-      # Without this, "v.0.3.0" published no version image and still went
-      # green, and "v0.3.0" on the 0.4.0 commit published 0.4.0 as 0.3.0.
-      - name: Check the tag matches the app version
-        if: github.ref_type == 'tag'
-        run: python3 scripts/check_release_tag.py "$GITHUB_REF_NAME"
+      # A release version must be exactly the version in app/config.py of the
+      # commit being built.
+      - name: Check the release version matches the app version
+        if: inputs.version != ''
+        env:
+          VERSION: ${{ inputs.version }}
+        run: python3 scripts/check_release_tag.py "v$VERSION"
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
@@ -45,8 +59,8 @@ jobs:
           flavor: |
             latest=false
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{version}},value=${{ inputs.version }},enable=${{ inputs.version != '' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ inputs.version }},enable=${{ inputs.version != '' }}
             type=ref,event=branch
             type=sha,format=short
 

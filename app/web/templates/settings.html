@@ -60,6 +60,10 @@
         </li>
         {% endfor %}
       </ul>
+      {% if webhook_alias %}
+      <p class="muted small">Webhook events with account id <code>{{ webhook_alias }}</code> also count as this
+        account; you confirmed it on the setup webhook step. Saving an account clears it.</p>
+      {% endif %}
       <input type="hidden" name="account_name" id="account_name" value="">
       <button>Save account</button>
     </form>

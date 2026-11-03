@@ -419,21 +419,73 @@ def test_mal_oauth_through_the_wizard(wizard, net):
 
 
 def test_the_webhook_step_reports_arrival(wizard):
-    assert wizard.get("/setup/webhook/status").json() == {"received": False, "at": None, "foreign": 0}
+    assert wizard.get("/setup/webhook/status").json() == {"received": False, "at": None, "foreign": 0, "other_server": 0, "candidate": None}
     db.execute("INSERT INTO watermark (name, value) VALUES ('last_webhook', datetime('now'))")
     assert wizard.get("/setup/webhook/status").json()["received"] is True
     assert "this step is done" in wizard.get("/setup/webhook").text
 
 
-def test_the_webhook_step_says_when_only_another_account_is_arriving(wizard):
-    from app.web.routes_webhook import COUNTER_FOREIGN
+def test_the_webhook_step_says_why_deliveries_were_dropped(wizard):
+    from app.web.routes_webhook import COUNTER_FOREIGN, COUNTER_OTHER_SERVER
 
-    assert 'id="webhook-foreign" class="callout tone-warn" role="status" hidden' in wizard.get("/setup/webhook").text
+    page = wizard.get("/setup/webhook").text
+    assert 'id="webhook-other-server" class="callout tone-warn" role="status" hidden' in page
+    assert 'id="webhook-foreign" class="callout tone-info" role="status" hidden' in page
+
     db.bump_counter(COUNTER_FOREIGN)
-    assert wizard.get("/setup/webhook/status").json()["foreign"] == 1
+    db.bump_counter(COUNTER_OTHER_SERVER)
+    status = wizard.get("/setup/webhook/status").json()
+    assert (status["foreign"], status["other_server"]) == (1, 1)
     page = wizard.get("/setup/webhook").text
     assert 'role="status" hidden' not in page
-    assert "came from a different Plex account" in page
+    assert "sent by a different Plex server" in page
+    assert "from other accounts on" in page
+
+
+def test_the_webhook_step_offers_an_id_that_looks_like_yours(wizard):
+    plex_client.save_server("http://plex:32400", "token", name="Shed Server", machine_id=SERVER_ID)
+    plex_client.save_account(plex_client.PlexAccountInfo(1, "jay", None))
+    plex_client.note_webhook_account_candidate(4242, ["name"])
+    assert wizard.get("/setup/webhook/status").json()["candidate"] == 4242
+    page = wizard.get("/setup/webhook").text
+    assert "These look like yours" in page and "from an account named jay" in page
+    assert 'name="account_id" value="4242"' in page
+    # Not also told those events were other people's.
+    assert 'id="webhook-foreign" class="callout tone-info" role="status" hidden' in page
+
+    # Only the id the bridge itself noticed can be confirmed.
+    refused = wizard.post("/setup/webhook/adopt", data={"account_id": "9999"}, follow_redirects=False)
+    assert "level=error" in location(refused)
+    assert plex_client.webhook_account_alias() is None
+
+    ok = wizard.post("/setup/webhook/adopt", data={"account_id": "4242"}, follow_redirects=False)
+    assert "level=ok" in location(ok)
+    assert plex_client.webhook_account_alias() == 4242
+    assert plex_client.webhook_account_candidate() is None
+    assert "These look like yours" not in wizard.get("/setup/webhook").text
+
+
+def test_an_id_the_server_lists_as_someone_else_is_refused(wizard):
+    """812 is the lodger's account on the stub server."""
+    plex_client.save_server("http://plex:32400", "token", name="Shed Server", machine_id=SERVER_ID)
+    plex_client.save_account(plex_client.PlexAccountInfo(1, "jay", None))
+    plex_client.note_webhook_account_candidate(812, ["owner"])
+    refused = wizard.post("/setup/webhook/adopt", data={"account_id": "812"}, follow_redirects=False)
+    assert "lodger" in location(refused)
+    assert plex_client.webhook_account_alias() is None
+
+
+def test_an_id_cannot_be_confirmed_without_checking_the_server(wizard, monkeypatch):
+    def unreachable(self):
+        raise plex_client.PlexUnavailable("connection refused")
+
+    plex_client.save_server("http://plex:32400", "token", name="Shed Server", machine_id=SERVER_ID)
+    plex_client.save_account(plex_client.PlexAccountInfo(1, "jay", None))
+    plex_client.note_webhook_account_candidate(4242, ["name"])
+    monkeypatch.setattr(plex_client.PlexClient, "accounts_sync", unreachable)
+    refused = wizard.post("/setup/webhook/adopt", data={"account_id": "4242"}, follow_redirects=False)
+    assert "level=error" in location(refused)
+    assert plex_client.webhook_account_alias() is None
 
 
 def test_finishing_sends_you_to_the_dashboard_from_then_on(wizard):
