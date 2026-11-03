@@ -122,12 +122,17 @@ def save_account(account: PlexAccountInfo) -> None:
 # the webhook account id
 #
 # Plex documents a server owner's webhook Account.id as always 1, the owner's
-# local account id. Installs have been seen where the owner's own events
-# carry another id, so every one of them was dropped as another account's.
-# Rather than guess what that id is, the bridge notices an event that is
-# plainly the chosen account's -- by name, or by Plex's own owner flags --
-# remembers the id it carries as a *candidate*, and asks. Only once the user
-# confirms it does the account filter accept that id too (the *alias*).
+# local account id. Real servers have been seen sending the owner's plex.tv
+# account id instead, so every one of the owner's events was dropped as
+# another account's. Two ways in, both exact ids, never a guess:
+#
+# * The owner's plex.tv id, recorded at the Plex sign-in in setup, counts
+#   automatically -- but only while the owner (local id 1) is the chosen
+#   account and the signed-in account owns the server.
+# * Otherwise the bridge notices an event that is plainly the chosen
+#   account's -- by name, or by Plex's own owner flags -- remembers the id it
+#   carries as a *candidate*, and asks. Only once the user confirms it does
+#   the account filter accept that id too (the *alias*).
 # --------------------------------------------------------------------------
 SIGNED_IN_AS = "plex_signed_in_as"
 WEBHOOK_ACCOUNT_ALIAS = "plex_webhook_account_alias"
@@ -152,6 +157,20 @@ def own_names() -> set[str]:
     if isinstance(hint, dict) and hint.get("owned") and configured_account_id() == 1:
         names |= {str(hint.get("username") or ""), str(hint.get("title") or "")}
     return {n.strip().lower() for n in names if n.strip() and not n.strip().isdigit()}
+
+
+def owner_plex_tv_id() -> int | None:
+    """The owner's plex.tv account id, when the owner is the chosen account."""
+    hint = settings_store.get(SIGNED_IN_AS, None) or {}
+    if not isinstance(hint, dict) or not hint.get("owned") or configured_account_id() != 1:
+        return None
+    value = hint.get("id")
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 1 else None
+
+
+def webhook_account_ids() -> set[int]:
+    """Ids besides the chosen account's own that its webhooks may carry."""
+    return {i for i in (owner_plex_tv_id(), webhook_account_alias()) if i is not None}
 
 
 def webhook_account_alias() -> int | None:

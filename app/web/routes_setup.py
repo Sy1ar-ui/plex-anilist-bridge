@@ -179,8 +179,10 @@ async def step_plex_choose(_: None = Depends(require_session), server_id: str = 
 
     plex_client.save_server(uri, server.access_token, name=info.get("name"), machine_id=info.get("machine_id"))
     who = pending.get("user") or {}
-    settings_store.set(_SIGNED_IN_AS, {"username": who.get("username"), "title": who.get("title"),
-                                       "owned": server.owned})
+    # The plex.tv id too: some servers send the owner's webhooks under it
+    # rather than the local id 1 (see plex.client, the webhook account id).
+    settings_store.set(_SIGNED_IN_AS, {"id": who.get("id"), "username": who.get("username"),
+                                       "title": who.get("title"), "owned": server.owned})
     plex_account.forget()   # the account token is not kept; the server token is
     return _redirect("/setup/account", f"Connected to {info.get('name') or server.name}.", "ok")
 

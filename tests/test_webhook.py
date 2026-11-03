@@ -250,6 +250,46 @@ def test_choosing_an_account_forgets_a_confirmed_id(client):
     assert plex_client.webhook_account_candidate() is None
 
 
+def _signed_in_as_owner(plex_tv_id=23834791, owned=True):
+    from app import settings_store
+
+    settings_store.set(plex_client.SIGNED_IN_AS,
+                       {"id": plex_tv_id, "username": "Ja_es", "title": "James", "owned": owned})
+
+
+def test_the_owners_plex_tv_id_counts_without_asking(client):
+    """What a real server sent: the owner's events under their plex.tv id, not 1."""
+    _signed_in_as_owner()
+    response = client.post(url(), json=_mine_as(23834791, event="media.scrobble"))
+    assert response.json()["status"] == "accepted"
+    assert plex_client.webhook_account_candidate() is None
+    # A play/stop marks the webhook as working, too.
+    db.execute("DELETE FROM watermark WHERE name = 'last_webhook'")
+    client.post(url(), json=_mine_as(23834791, event="media.stop"))
+    assert _last_webhook() is not None
+
+
+def test_the_plex_tv_id_counts_only_for_the_chosen_owner(client):
+    _signed_in_as_owner()
+    plex_client.save_account(PlexAccountInfo(812, "lodger", None))
+    assert plex_client.owner_plex_tv_id() is None
+    assert client.post(url(), json=_mine_as(23834791)).json()["reason"] == "other account"
+
+
+def test_the_plex_tv_id_counts_only_when_the_sign_in_owns_the_server(client):
+    _signed_in_as_owner(owned=False)
+    assert plex_client.owner_plex_tv_id() is None
+    assert client.post(url(), json=_mine_as(23834791)).json()["reason"] == "other account"
+
+
+def test_an_older_sign_in_without_an_id_still_asks(client):
+    """Installs set up before the id was recorded fall back to the prompt."""
+    _signed_in_as_owner(plex_tv_id=None)
+    assert plex_client.owner_plex_tv_id() is None
+    client.post(url(), json=_mine_as(23834791))
+    assert plex_client.webhook_account_candidate()["id"] == 23834791
+
+
 def test_own_names_include_the_plex_sign_in(client):
     from app import settings_store
 

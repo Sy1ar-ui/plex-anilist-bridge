@@ -60,6 +60,10 @@
         </li>
         {% endfor %}
       </ul>
+      {% if owner_plex_tv_id %}
+      <p class="muted small">Webhook events with your plex.tv account id <code>{{ owner_plex_tv_id }}</code> also
+        count as the server owner: some Plex servers send that instead of the owner&rsquo;s local id 1.</p>
+      {% endif %}
       {% if webhook_alias %}
       <p class="muted small">Webhook events with account id <code>{{ webhook_alias }}</code> also count as this
         account; you confirmed it on the setup webhook step. Saving an account clears it.</p>
