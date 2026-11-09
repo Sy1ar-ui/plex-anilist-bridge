@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from app import auth, config, repo, settings_store
-from app.sync import completion, review
+from app.sync import completion, ignored, review
 
 log = logging.getLogger(__name__)
 
@@ -63,7 +63,11 @@ ENDPOINTS = [
                                                 '"ep_to": null, "start": 1, "scope": "plex_guid"|"tvdb"}. '
                                                 "Plex episodes ep_from..ep_to become AniList episodes from "
                                                 "start. Re-runs the covered episodes.")),
-    ("POST", "/api/v1/review/{event_id}/dismiss", "Take an item out of the review queue; writes nothing."),
+    ("POST", "/api/v1/review/{event_id}/dismiss", "Take an item out of the review queue once; writes nothing."),
+    ("POST", "/api/v1/review/{event_id}/drop", ("Drop the show behind an item: it leaves the queue and future "
+                                                 "episodes are skipped without asking. Reversible; writes nothing.")),
+    ("GET", "/api/v1/review/dropped", "Shows that have been dropped."),
+    ("DELETE", "/api/v1/review/dropped/{ignored_id}", "Undrop a show; affects episodes watched from then on."),
     ("GET", "/api/v1/activity", "Recent events, newest first. ?limit=20 (max 100), ?status=written."),
 ]
 
@@ -204,6 +208,34 @@ async def review_link(event_id: int, request: Request) -> dict[str, Any]:
 async def review_dismiss(event_id: int) -> dict[str, Any]:
     group = _open_group(event_id)
     return {"ok": True, "dismissed_events": review.dismiss(group)}
+
+
+@router.post("/review/{event_id}/drop", dependencies=[Auth])
+async def review_drop(event_id: int) -> dict[str, Any]:
+    """Drop the show behind this item. Nothing is written to AniList."""
+    group = _open_group(event_id)
+    if group.plex_guid:
+        scope_type, scope_key = ignored.SCOPE_SHOW, group.plex_guid
+    elif group.tvdb_id:
+        scope_type, scope_key = ignored.SCOPE_TVDB, str(group.tvdb_id)
+    else:
+        raise HTTPException(status_code=422,
+                            detail="that item has no Plex GUID or TVDB id to drop it by")
+    ignored.add(scope_type=scope_type, scope_key=scope_key, title=group.title)
+    return {"ok": True, "dropped": {"scope": scope_type, "key": scope_key, "title": group.title},
+            "dismissed_events": review.dismiss(group)}
+
+
+@router.get("/review/dropped", dependencies=[Auth])
+async def review_dropped() -> dict[str, Any]:
+    return {"dropped": ignored.listing()}
+
+
+@router.delete("/review/dropped/{ignored_id}", dependencies=[Auth])
+async def review_undrop(ignored_id: int) -> dict[str, Any]:
+    if not ignored.remove(ignored_id):
+        raise HTTPException(status_code=404, detail="that show is not on the dropped list")
+    return {"ok": True}
 
 
 # --------------------------------------------------------------------------

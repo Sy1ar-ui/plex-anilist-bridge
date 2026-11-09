@@ -42,7 +42,11 @@
             <a href="/activity/{{ g.latest_id }}">Why was it held?</a>
             <form method="post" action="/review/{{ g.latest_id }}/dismiss">
               <button class="link"
-                      onclick="return confirm('Dismiss {{ g.event_ids|length }} event(s)? Nothing is written to AniList.')">Dismiss</button>
+                      onclick="return confirm('Dismiss {{ g.event_ids|length }} event(s)? Nothing is written to AniList.')">Dismiss once</button>
+            </form>
+            <form method="post" action="/review/{{ g.latest_id }}/ignore">
+              <button class="link danger"
+                      onclick="return confirm('Drop {{ g.title }}?\n\nIt leaves the queue and future episodes are skipped without asking again. Nothing is written to AniList, and you can undo it under Dropped shows.')">Drop this show</button>
             </form>
           </div>
         </details>
@@ -93,6 +97,46 @@
   </div>
   {% else %}
   <p class="muted">None yet. Corrections you make here always win over the mapping datasets.</p>
+  {% endif %}
+</section>
+
+<section class="panel" id="dropped">
+  <div class="panel-head">
+    <div class="panel-title">
+      <span class="panel-icon">{{ icon('eye-off') }}</span>
+      <h2>Dropped shows</h2>
+    </div>
+  </div>
+  {% if dropped %}
+  <p class="muted small">Skipped before any matching happens. Nothing was written to AniList for
+    them, and undropping one only affects episodes watched from then on.</p>
+  <div class="table-wrap">
+  <table class="log compact">
+    <thead><tr><th>Show</th><th>Dropped by</th><th><span class="sr-only">Actions</span></th></tr></thead>
+    <tbody>
+    {% for d in dropped %}
+    <tr>
+      <td><strong>{{ d.title or d.scope_key }}</strong></td>
+      <td>
+        {% if d.scope_type == 'tvdb' %}
+          <span class="tag" title="Applies to every Plex show with this TVDB id">TVDB {{ d.scope_key }}</span>
+        {% else %}
+          <span class="muted small">{{ d.scope_key }}</span>
+        {% endif %}
+      </td>
+      <td class="nowrap">
+        <form method="post" action="/review/dropped/{{ d.id }}/delete" class="inline">
+          <button class="link">Undrop</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="muted">None. Use <em>Drop this show</em> on a queue item for anything that is not
+    anime &mdash; live-action that shares the server, or something filed into the wrong folder.</p>
   {% endif %}
 </section>
 

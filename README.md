@@ -512,7 +512,7 @@ filter leaving no trace of another user's viewing.
 ### What is and is not verified
 
 **Tested.** CI runs the suite on CPython 3.12 for every pull request and every
-push to `main`: **479 tests at 0.6.2**, all offline. Mapping datasets come from
+push to `main`: **514 tests at 0.6.3**, all offline. Mapping datasets come from
 fixture slices cut from the real datasets, and every outside service is
 answered by a stub or a mocked HTTP transport. The image builds for
 **linux/amd64 and linux/arm64** on every pull request (without pushing) and is

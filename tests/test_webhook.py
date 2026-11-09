@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 from app import auth, db
 from app.plex import client as plex_client
 from app.plex import webhook
-from app.plex.client import PlexAccountInfo
+from app.plex.client import PlexAccountInfo, PlexLibraryInfo
 from app.web import routes_webhook
 from tests.conftest import FIXTURES
 
@@ -77,6 +77,16 @@ def test_the_payload_carries_no_external_ids():
 @pytest.fixture
 def client(temp_db, settings):
     plex_client.save_account(PlexAccountInfo(1, "me", None))
+    # A configured install, shaped like a real one: anime in its own library,
+    # live-action TV in another that is deliberately not ticked.
+    plex_client.save_libraries(
+        [
+            PlexLibraryInfo(3, "Anime TV", "show"),
+            PlexLibraryInfo(4, "Anime Movies", "movie"),
+            PlexLibraryInfo(9, "TV shows", "show"),
+        ],
+        {3, 4},
+    )
     app = FastAPI()
     app.include_router(routes_webhook.router)
     with TestClient(app) as test_client:
@@ -85,6 +95,16 @@ def client(temp_db, settings):
 
 def url(path_token: str | None = None) -> str:
     return f"/webhook/plex/{path_token or auth.webhook_path_token()}"
+
+
+def in_library(payload: dict, section_id: int | None, **metadata) -> dict:
+    """The same scrobble, as Plex would send it from another library."""
+    changed = {**payload["Metadata"], **metadata}
+    if section_id is None:
+        changed.pop("librarySectionID", None)
+    else:
+        changed["librarySectionID"] = section_id
+    return {**payload, "Metadata": changed}
 
 
 def test_an_event_from_another_account_leaves_no_trace(client):
@@ -417,3 +437,74 @@ def test_the_probe_endpoint_reports_the_configured_account(client):
 
 def test_the_probe_endpoint_hides_behind_the_token(client):
     assert client.get(url("00000000" * 4)).status_code == 404
+
+
+# --------------------------------------------------------------------------
+# the library filter
+# --------------------------------------------------------------------------
+# Keeping anime and live-action in separate Plex libraries does nothing by
+# itself: Plex fires a webhook for every library on the server. Without this
+# filter a live-action episode reaches the mapper, fails to match, and clutters
+# the review queue.
+def test_a_scrobble_from_a_library_that_is_not_ticked_is_dropped(client):
+    live_action = in_library(
+        MINE,
+        9,
+        grandparentTitle="Last Week Tonight with John Oliver",
+        title="November 8, 2026",
+        index=29,
+        parentIndex=13,
+    )
+    response = client.post(url(), json=live_action)
+
+    assert response.status_code == 200
+    assert response.json()["reason"] == "library not enabled"
+    assert db.get_counter(routes_webhook.COUNTER_OTHER_LIBRARY) == 1
+    assert db.query_one("SELECT COUNT(*) AS n FROM event")["n"] == 0
+
+
+def test_a_dropped_library_event_never_reaches_the_mapper(client):
+    client.post(url(), json=in_library(MINE, 9, grandparentTitle="The Rookie"))
+    assert db.get_counter(routes_webhook.COUNTER_ACCEPTED) == 0
+    for table in ("event", "show", "write_log"):
+        blob = " ".join(str(dict(r)) for r in db.query(f"SELECT * FROM {table}"))
+        assert "The Rookie" not in blob
+
+
+def test_a_scrobble_from_a_ticked_library_is_still_accepted(client):
+    response = client.post(url(), json=MINE)
+    assert response.json()["status"] == "accepted"
+    assert db.get_counter(routes_webhook.COUNTER_OTHER_LIBRARY) == 0
+
+
+def test_an_event_with_no_library_id_is_allowed_through(client):
+    """Plex should always send librarySectionID; if it does not, dropping the
+    event would lose a real play, and the mapper rejects non-anime anyway."""
+    response = client.post(url(), json=in_library(MINE, None))
+    assert response.json()["status"] == "accepted"
+
+
+def test_the_library_reason_beats_the_media_type_reason(client):
+    """A live-action item should say which check rejected it, not a vaguer one."""
+    response = client.post(url(), json=in_library(MINE, 9, type="track"))
+    assert response.json()["reason"] == "library not enabled"
+
+
+# --------------------------------------------------------------------------
+# the rule itself
+# --------------------------------------------------------------------------
+def test_section_is_enabled_rules(temp_db):
+    plex_client.save_libraries(
+        [PlexLibraryInfo(3, "Anime TV", "show"), PlexLibraryInfo(9, "TV shows", "show")],
+        {3},
+    )
+    assert plex_client.section_is_enabled(3) is True
+    assert plex_client.section_is_enabled(9) is False
+    assert plex_client.section_is_enabled(None) is True
+
+
+def test_no_enabled_library_means_nothing_qualifies(temp_db):
+    """Setup refuses to continue until a library is ticked, so an empty set
+    means setup never finished -- not that every library counts."""
+    assert plex_client.section_is_enabled(3) is False
+    assert plex_client.section_is_enabled(9) is False

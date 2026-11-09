@@ -396,7 +396,11 @@
     box-shadow: var(--shadow-1);
     min-width: 0;
   }
-  .panel.flush { padding: 0; overflow: hidden; }
+  /* No overflow:hidden here. A row's "…" menu is absolutely positioned and has
+     to be able to hang below the panel; clipping it hid the menu entirely on
+     the last row. Only tables paint a background out to the panel edge, so the
+     corner clipping they need is done on .table-wrap instead. */
+  .panel.flush { padding: 0; }
   .panel.narrow { max-width: 440px; }
 
   .panel-head, .card-head {
@@ -448,6 +452,18 @@
   }
   button.secondary:hover, a.button.secondary:hover { background: var(--surface-3); border-color: var(--muted); }
   button.secondary:disabled:hover { background: var(--surface-2); border-color: var(--line-strong); }
+
+  /* Outlined rather than filled: destructive, but not the loudest thing on a
+     page whose primary action is to match the show, not to drop it. */
+  button.danger, a.button.danger {
+    background: transparent; color: var(--bad);
+    border-color: color-mix(in srgb, var(--bad) 45%, transparent);
+    box-shadow: none;
+  }
+  button.danger:hover, a.button.danger:hover {
+    background: color-mix(in srgb, var(--bad) 12%, transparent);
+    border-color: var(--bad);
+  }
 
   button.link {
     min-height: 0; padding: 0; border: 0; background: none; box-shadow: none;
@@ -621,6 +637,12 @@
     color: var(--text); font-weight: 500; font-size: 14px; text-decoration: none; text-align: left;
   }
   .more-menu a:hover, .more-menu button.link:hover { background: var(--surface-2); text-decoration: none; }
+  /* The destructive entry reads as destructive before it is clicked, not only
+     in its confirm dialog. */
+  .more-menu button.link.danger { color: var(--bad); }
+  .more-menu button.link.danger:hover {
+    background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad);
+  }
 
   /* empty states */
   .empty {
@@ -746,6 +768,10 @@
   }
   table.log.compact td { padding-block: 9px; }
   .table-wrap { overflow-x: auto; }
+  /* overflow-x already makes this a clip context, so inheriting the panel's
+     radius keeps a hovered first/last row inside the rounded corners now that
+     the panel itself no longer clips. */
+  .panel.flush > .table-wrap { border-radius: inherit; }
   .panel.flush table { margin: 0; }
   .panel.flush :is(th, td):first-child { padding-left: 22px; }
   .panel.flush :is(th, td):last-child { padding-right: 22px; }

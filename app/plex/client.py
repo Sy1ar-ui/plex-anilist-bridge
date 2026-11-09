@@ -266,6 +266,28 @@ def enabled_section_ids() -> set[int]:
     return {int(r["section_id"]) for r in db.query("SELECT section_id FROM library WHERE enabled = 1")}
 
 
+def section_is_enabled(section_id: int | None) -> bool:
+    """Should events from this Plex library be synced at all?
+
+    The library list answers "which of my libraries hold anime", so anything
+    outside it is dropped before a single lookup happens. Separating anime and
+    TV into different libraries in Plex does *not* do this for you: a webhook
+    fires for every library on the server, and the payload's
+    ``librarySectionID`` is the only thing that distinguishes them.
+
+    An unknown section is allowed through: Plex should always send
+    ``librarySectionID``, but dropping an event over missing metadata would
+    lose real plays, and the mapping engine rejects non-anime anyway.
+
+    With no library enabled, nothing qualifies. Setup refuses to continue until
+    at least one is ticked, so an empty set means setup never finished rather
+    than "every library counts".
+    """
+    if section_id is None:
+        return True
+    return int(section_id) in enabled_section_ids()
+
+
 # --------------------------------------------------------------------------
 # guid parsing
 # --------------------------------------------------------------------------

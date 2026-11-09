@@ -40,7 +40,7 @@ from app.mapping import engine
 from app.mapping.titles import clean_title, season_variants, title_candidates
 from app.models import Candidate, MatchResult, TraceStep, WatchEvent
 from app.plex.client import PlexClient, PlexUnavailable
-from app.sync import completion
+from app.sync import completion, ignored
 from app.sync.writegate import RESULT_DEFERRED, WriteGate
 
 log = logging.getLogger(__name__)
@@ -183,6 +183,16 @@ async def handle_watch_event(
         )
 
     repo.upsert_show(event.show, rating_key=event.show_rating_key, section_id=None)
+
+    # A show the user dropped never reaches the matcher again. Checked here
+    # rather than in the review queue so a dropped show stops costing a lookup
+    # and stops reappearing every time another episode is watched.
+    dropped = ignored.match(event.show)
+    if dropped is not None:
+        return finish(
+            STATUS_SKIPPED,
+            f"dropped: you chose to ignore this show ({dropped.describe()})",
+        )
 
     # ---- enrichment: per-season episode counts --------------------------
     if plex is not None and event.show.plex_guid and event.show_rating_key:

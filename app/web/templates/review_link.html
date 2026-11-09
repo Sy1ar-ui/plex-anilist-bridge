@@ -149,6 +149,36 @@
 </section>
 {% endif %}
 
+<section class="panel" id="drop">
+  <div class="panel-head">
+    <div class="panel-title">
+      <span class="panel-icon">{{ icon('eye-off') }}</span>
+      <h2>Not anime?</h2>
+    </div>
+  </div>
+  <p class="muted">
+    If this is live-action sharing the server, or something filed into the wrong
+    folder, drop it instead of matching it. It leaves the queue and future
+    episodes are skipped without asking again. Nothing is written to AniList,
+    and you can undo it under
+    <a href="/review#dropped">Dropped shows</a>.
+  </p>
+  <div class="button-row">
+    <form method="post" action="/review/{{ group.latest_id }}/ignore">
+      <button class="danger"
+              onclick="return confirm('Drop {{ group.title }}?\n\nIt leaves the queue and future episodes are skipped without asking again. Nothing is written to AniList, and you can undo it under Dropped shows.')">
+        {{ icon('eye-off', 'icon-sm') }} Drop this show
+      </button>
+    </form>
+    <form method="post" action="/review/{{ group.latest_id }}/dismiss">
+      <button class="secondary"
+              onclick="return confirm('Dismiss {{ group.event_ids|length }} event(s)? Nothing is written to AniList, and the show can come back to the queue later.')">
+        Dismiss once
+      </button>
+    </form>
+  </div>
+</section>
+
 {% endblock %}
 
 {% block scripts %}

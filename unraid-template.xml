@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <Container version="2">
   <Name>plex-anilist-bridge</Name>
-  <Repository>ghcr.io/sy1ar-ui/plex-anilist-bridge:0.6.2</Repository>
+  <Repository>ghcr.io/sy1ar-ui/plex-anilist-bridge:0.6.3</Repository>
   <Registry>https://ghcr.io/sy1ar-ui/plex-anilist-bridge</Registry>
   <Network>bridge</Network>
   <MyIP/>

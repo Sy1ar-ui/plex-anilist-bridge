@@ -47,6 +47,7 @@ COUNTER_FOREIGN = "foreign_event_dropped"
 COUNTER_ACCEPTED = "webhook_accepted"
 COUNTER_IGNORED = "webhook_ignored_event_type"
 COUNTER_OTHER_SERVER = "webhook_other_server"
+COUNTER_OTHER_LIBRARY = "webhook_other_library"
 
 
 async def _read_payload(request: Request) -> dict[str, Any] | None:
@@ -127,6 +128,21 @@ async def plex_webhook_endpoint(
     # Recorded under the chosen account's own id whichever of its ids Plex
     # sent, so the history reconcile recognises the play as already seen.
     parsed = dataclasses.replace(plex_webhook.parse(payload), account_id=configured)
+
+    # --- the library filter ----------------------------------------------
+    # Plex sends scrobbles from every library, so keeping anime and TV in
+    # separate libraries does nothing on its own. Without this, an episode of
+    # a live-action show reaches the mapper, fails to match and lands in the
+    # review queue as noise. Unlike the account filter, this is the user's own
+    # viewing, so the title is safe to log and useful when diagnosing.
+    if not plex_client.section_is_enabled(parsed.section_id):
+        db.bump_counter(COUNTER_OTHER_LIBRARY)
+        log.info(
+            "event dropped: library is not one of the enabled anime libraries",
+            extra={"section_id": parsed.section_id, "item": parsed.show_title},
+        )
+        return JSONResponse({"status": "ignored", "reason": "library not enabled"})
+
     if parsed.media_kind not in ("episode", "movie"):
         db.bump_counter(COUNTER_IGNORED)
         return JSONResponse({"status": "ignored", "reason": f"media type {parsed.media_kind}"})

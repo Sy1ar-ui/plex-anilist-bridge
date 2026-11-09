@@ -33,7 +33,7 @@ from app.datasets import refresh as dataset_refresh
 from app.mapping import engine
 from app.plex import client as plex_client
 from app.plex.client import PlexClient, PlexUnavailable
-from app.sync import completion, reconcile, retry, review
+from app.sync import completion, ignored, reconcile, retry, review
 from app.web import timefmt
 
 log = logging.getLogger(__name__)
@@ -226,6 +226,7 @@ async def system_page(
             "accepted": db.get_counter("webhook_accepted"),
             "dropped_other_accounts": db.get_counter("foreign_event_dropped"),
             "dropped_other_servers": db.get_counter("webhook_other_server"),
+            "dropped_other_libraries": db.get_counter("webhook_other_library"),
             "ignored": db.get_counter("webhook_ignored_event_type"),
         },
         event_total=repo.event_count(),
@@ -824,6 +825,7 @@ async def review_page(
         request,
         groups=groups,
         overrides=review.list_overrides(),
+        dropped=ignored.listing(),
         notice=notice,
     )
     return templates.TemplateResponse(request, "review.html", context)
@@ -968,6 +970,49 @@ async def review_dismiss(event_id: int, _: None = Depends(require_session)):
         return _redirect("/review", "That item is no longer waiting for review.")
     count = review.dismiss(group)
     return _redirect("/review", f"Dismissed {group.label} ({count} event(s)); nothing was written.", "ok")
+
+
+@router.post("/review/{event_id}/ignore")
+async def review_ignore(event_id: int, _: None = Depends(require_session)):
+    """Drop the show behind this item, so it stops reaching the queue."""
+    group = review.group_for_event(event_id)
+    if group is None:
+        return _redirect("/review", "That item is no longer waiting for review.")
+
+    # Prefer the Plex GUID: it names this one show. A TVDB id is the fallback
+    # for an item Plex gave no GUID, and is broader by nature.
+    if group.plex_guid:
+        scope_type, scope_key = ignored.SCOPE_SHOW, group.plex_guid
+    elif group.tvdb_id:
+        scope_type, scope_key = ignored.SCOPE_TVDB, str(group.tvdb_id)
+    else:
+        return _redirect(
+            "/review",
+            f"{group.title} has no Plex GUID or TVDB id, so there is nothing stable to drop it by. "
+            "Dismiss it instead.",
+            "error",
+        )
+
+    ignored.add(scope_type=scope_type, scope_key=scope_key, title=group.title)
+    count = review.dismiss(group)
+    return _redirect(
+        "/review#dropped",
+        f"Dropped {group.title} and cleared {count} event(s). Episodes of it are skipped from now "
+        "on; nothing was written to AniList. Undo it under Dropped shows.",
+        "ok",
+    )
+
+
+@router.post("/review/dropped/{ignored_id}/delete")
+async def review_undrop(ignored_id: int, _: None = Depends(require_session)):
+    if ignored.remove(ignored_id):
+        return _redirect(
+            "/review#dropped",
+            "No longer dropped. Episodes watched from now on are matched again; "
+            "already-skipped events are not revisited.",
+            "ok",
+        )
+    return _redirect("/review#dropped", "That show is not on the dropped list.", "error")
 
 
 @router.post("/review/corrections/{override_id}/delete")

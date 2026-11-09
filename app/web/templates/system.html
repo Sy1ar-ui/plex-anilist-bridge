@@ -16,6 +16,7 @@
       <span class="stat"><strong>{{ counters.accepted }}</strong> accepted</span>
       <span class="stat"><strong>{{ counters.dropped_other_accounts }}</strong> dropped from other accounts</span>
       {% if counters.dropped_other_servers %}<span class="stat"><strong>{{ counters.dropped_other_servers }}</strong> from other servers</span>{% endif %}
+      {% if counters.dropped_other_libraries %}<span class="stat" title="Scrobbles from libraries you did not tick as anime. Plex sends an event for every library; this is where the non-anime ones stop."><strong>{{ counters.dropped_other_libraries }}</strong> from other libraries</span>{% endif %}
       <span class="stat"><strong>{{ counters.ignored }}</strong> ignored, all time</span>
     </div>
   </div>

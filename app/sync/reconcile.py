@@ -97,7 +97,6 @@ async def run_reconcile(*, lookback_hours: int | None = None) -> ReconcileReport
 
     hours = lookback_hours or int(settings.get("reconcile_lookback_hours", 72))
     mindate = datetime.now(UTC) - timedelta(hours=hours)
-    enabled = plex_client.enabled_section_ids()
 
     account_ids = [account_id, *sorted(plex_client.webhook_account_ids() - {account_id})]
     try:
@@ -131,7 +130,7 @@ async def run_reconcile(*, lookback_hours: int | None = None) -> ReconcileReport
             rating_key = str(rating_key)
 
             section_id = getattr(item, "librarySectionID", None)
-            if enabled and section_id is not None and int(section_id) not in enabled:
+            if not plex_client.section_is_enabled(section_id):
                 report.skipped_other_library += 1
                 continue
 
